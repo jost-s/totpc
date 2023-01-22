@@ -2,7 +2,7 @@ use std::io::stdin;
 use std::path::Path;
 
 use compute::compute;
-use file::read_key_from_file;
+use file::{delete_key_from_file, read_key_from_file};
 
 use crate::base32::decode;
 use crate::file::{ensure_file_exists, identifier_exists_in_file, write_key_to_file};
@@ -14,6 +14,7 @@ mod file;
 pub const COMMAND_COMPUTE: &str = "compute";
 pub const COMMAND_LOAD: &str = "read";
 pub const COMMAND_SAVE: &str = "save";
+pub const COMMAND_DELETE: &str = "delete";
 
 pub enum ErrorMessage {
     EmptyKey,
@@ -36,24 +37,15 @@ pub fn print_help() {
     println!("Syntax: totp [command] [identifier] [-f file-path]");
     println!();
     println!(
-        "All possible commands are:\n- {}\n- {}\n- {}",
-        COMMAND_LOAD, COMMAND_SAVE, COMMAND_COMPUTE
+        "All possible commands are:\n- {}\n- {}\n- {}\n- {}",
+        COMMAND_COMPUTE, COMMAND_LOAD, COMMAND_SAVE, COMMAND_DELETE
     );
 }
 
 pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
-    let command = match args.len() {
-        1 => COMMAND_COMPUTE,
-        _ => &args[1],
-    };
+    let command = args[1].as_str();
 
     match command {
-        // COMMAND_READ => {
-        //     if args.len() < 3 {
-        //         panic!("missing parameter: identifier");
-        //     }
-        //     command::read(args[2].as_str());
-        // }
         COMMAND_SAVE => {
             if args.len() < 3 {
                 return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
@@ -81,8 +73,8 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             println!("key {}", key_base32);
 
             write_key_to_file(file_path, &identifier.to_string(), &key_base32)
-                .map(|_| format!("Key for identifier {} saved.", identifier))
-                .map_err(|error| format!("Error: could not create file to save key - {}", error))
+                .map_err(|error| format!("Error: could not create file to save key - {}", error))?;
+            Ok(format!("Key for identifier {} saved.", identifier))
         }
         COMMAND_COMPUTE => {
             if args.len() < 3 {
@@ -112,6 +104,14 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
                     Ok(format!("Current TOTP for {} is {}", identifier, totp))
                 }
             }
+        }
+        COMMAND_DELETE => {
+            if args.len() < 3 {
+                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+            }
+            let identifier = args[2].as_str();
+            delete_key_from_file(identifier, file_path)?;
+            Ok(format!("Entry for identifier {} deleted.", identifier))
         }
         _ => Err(format!("Error: unknown command \"{}\"", command)),
     }

@@ -15,6 +15,68 @@ pub fn ensure_file_exists(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("Error reading file - {}", error))
 }
 
+pub fn read_key_from_file(path: &Path, identifier: &str) -> Result<Option<String>, String> {
+    let maybe_key =
+        find_entry_in_file(identifier, path)?.and_then(|line| match line.split(DELIMITER).last() {
+            None => None,
+            Some(key) => Some(key.to_string()),
+        });
+    Ok(maybe_key)
+}
+
+pub fn identifier_exists_in_file(path: &Path, identifier: &str) -> Result<bool, String> {
+    Ok(find_entry_in_file(identifier, path)?.is_some())
+}
+
+pub fn write_key_to_file(path: &Path, identifier: &str, key: &str) -> Result<(), String> {
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| format!("Error opening file with write access - {}", error))?;
+    let mut writer = BufWriter::new(file);
+    let entry = format!("{}{}{}\n", identifier, DELIMITER, key);
+    writer
+        .write_all(entry.as_bytes())
+        .map_err(|error| format!("Error writing to file - {}", error))
+}
+
+pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String> {
+    match find_entry_in_file(identifier, path)? {
+        None => return Err(format!("Identifier {} not found", identifier)),
+        Some(entry) => {
+            let filtered_lines = {
+                let file =
+                    File::open(path).map_err(|error| format!("Error deleting entry - {}", error))?;
+                let reader = BufReader::new(file);
+                let mut lines = Vec::new();
+                for maybe_line in reader.lines() {
+                    match maybe_line {
+                        Err(error) => {
+                            return Err(format!("Error deleting entry - {}", error))
+                        }
+                        Ok(line) => {
+                            if line != entry {
+                                lines.push(line);
+                            }
+                        }
+                    }
+                }
+                lines
+            };
+            let file = OpenOptions::new()
+                .write(true)
+                .open(path)
+                .map_err(|error| format!("Error deleting entry - {}", error))?;
+            let mut writer = BufWriter::new(file);
+            let all_lines = filtered_lines.join("\n");
+            writer
+                .write_all(all_lines.as_bytes())
+                .map_err(|error| format!("Error deleting entry - {}", error))
+        }
+    }
+}
+
 fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, String> {
     let file = File::open(path).map_err(|error| format!("Error reading file - {}", error))?;
     let reader = BufReader::new(file);
@@ -36,36 +98,11 @@ fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, S
     Ok(maybe_entry)
 }
 
-pub fn read_key_from_file(path: &Path, identifier: &str) -> Result<Option<String>, String> {
-    let maybe_key =
-        find_entry_in_file(identifier, path)?.and_then(|line| match line.split(DELIMITER).last() {
-            None => None,
-            Some(key) => Some(key.to_string()),
-        });
-    Ok(maybe_key)
-}
-
-pub fn identifier_exists_in_file(path: &Path, identifier: &str) -> Result<bool, String> {
-    Ok(find_entry_in_file(identifier, path)?.is_some())
-}
-
-pub fn write_key_to_file(path: &Path, identifier: &str, key: &str) -> Result<(), String> {
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|error| format!("Error reading file - {}", error))?;
-    let mut writer = BufWriter::new(file);
-    let entry = format!("{}{}{}\n", identifier, DELIMITER, key);
-    writer
-        .write_all(entry.as_bytes())
-        .map_err(|error| format!("Error reading file - {}", error))
-}
-
 #[cfg(test)]
 mod tests {
     use crate::file::{
-        identifier_exists_in_file, read_key_from_file, write_key_to_file, DELIMITER,
+        delete_key_from_file, identifier_exists_in_file, read_key_from_file, write_key_to_file,
+        DELIMITER,
     };
     use std::io::{BufRead, BufReader, Write};
     use tempfile::NamedTempFile;
@@ -135,6 +172,24 @@ mod tests {
     }
 
     #[test]
+    fn delete_entry() {
+        let file = NamedTempFile::new().unwrap();
+        let identifier_1 = "id_1";
+        let identifier_2 = "id_2";
+        let key_1 = "key_1";
+        let key_2 = "key_2";
+        write_key_to_file(file.path(), identifier_1, key_1).unwrap();
+        write_key_to_file(file.path(), identifier_2, key_2).unwrap();
+
+        delete_key_from_file(identifier_1, file.path()).unwrap();
+
+        let deleted_identifier_exists = identifier_exists_in_file(file.path(), identifier_1).unwrap();
+        assert_eq!(deleted_identifier_exists, false);
+        let identifier_2_exists = identifier_exists_in_file(file.path(), identifier_2).unwrap();
+        assert_eq!(identifier_2_exists, true);
+    }
+
+    #[test]
     fn identifier_exists() {
         let mut file = NamedTempFile::new().unwrap();
         let identifier = "test_site";
@@ -145,7 +200,7 @@ mod tests {
 
         let identifier_exists = identifier_exists_in_file(file.path(), identifier).unwrap();
 
-        assert!(identifier_exists);
+        assert_eq!(identifier_exists, false);
     }
 
     #[test]
