@@ -15,35 +15,15 @@ pub fn ensure_file_exists(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("Error reading file - {}", error))
 }
 
-pub fn read_key_from_file(path: &Path, identifier: &str) -> Result<Option<String>, String> {
+fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, String> {
     let file = File::open(path).map_err(|error| format!("Error reading file - {}", error))?;
     let reader = BufReader::new(file);
-    let maybe_key = reader
+    let maybe_entry = reader
         .lines()
         .filter_map(|line| match line {
             Ok(l) => Some(l),
             Err(error) => {
-                eprintln!("Error reading file: {}", error);
-                None
-            }
-        })
-        .find(|line| line.contains(identifier))
-        .and_then(|line| match line.split(DELIMITER).last() {
-            None => None,
-            Some(key) => Some(key.to_string()),
-        });
-    Ok(maybe_key)
-}
-
-pub fn identifier_exists_in_file(path: &Path, identifier: &str) -> Result<bool, String> {
-    let file = File::open(path).map_err(|error| format!("Error reading file - {}", error))?;
-    let reader = BufReader::new(file);
-    let maybe_key = reader
-        .lines()
-        .filter_map(|line| match line {
-            Ok(l) => Some(l),
-            Err(error) => {
-                eprintln!("Error while reading file: {}", error);
+                eprintln!("Error reading line: {}", error);
                 None
             }
         })
@@ -52,9 +32,21 @@ pub fn identifier_exists_in_file(path: &Path, identifier: &str) -> Result<bool, 
                 .next()
                 .and_then(|id| Some(id == identifier))
                 .unwrap_or_else(|| false)
-        })
-        .is_some();
+        });
+    Ok(maybe_entry)
+}
+
+pub fn read_key_from_file(path: &Path, identifier: &str) -> Result<Option<String>, String> {
+    let maybe_key =
+        find_entry_in_file(identifier, path)?.and_then(|line| match line.split(DELIMITER).last() {
+            None => None,
+            Some(key) => Some(key.to_string()),
+        });
     Ok(maybe_key)
+}
+
+pub fn identifier_exists_in_file(path: &Path, identifier: &str) -> Result<bool, String> {
+    Ok(find_entry_in_file(identifier, path)?.is_some())
 }
 
 pub fn write_key_to_file(path: &Path, identifier: &str, key: &str) -> Result<(), String> {
