@@ -33,8 +33,8 @@ impl ErrorMessage {
 }
 
 pub fn print_help() {
-    println!("TOTP manager");
-    println!("Syntax: totp [command] [identifier] [-f file-path]");
+    println!("The One The Password");
+    println!("Usage: totp [command] [identifier]");
     println!();
     println!(
         "All possible commands are:\n- {}\n- {}\n- {}\n- {}",
@@ -43,6 +43,11 @@ pub fn print_help() {
 }
 
 pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
+    if args.len() < 2 {
+        print_help();
+        println!();
+        return Err(format!("No command specified."));
+    }
     let command = args[1].as_str();
 
     match command {
@@ -54,7 +59,7 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
                 .map_err(|error| format!("Error creating file - {}", error))?;
 
             let identifier = args[2].as_str();
-            let identifier_exists = identifier_exists_in_file(file_path, identifier)
+            let identifier_exists = identifier_exists_in_file(identifier, file_path)
                 .map_err(|error| format!("Error reading file - {}", error))?;
             if identifier_exists {
                 return Err(format!("Error: identifier {} already exists", identifier));

@@ -24,7 +24,7 @@ pub fn read_key_from_file(path: &Path, identifier: &str) -> Result<Option<String
     Ok(maybe_key)
 }
 
-pub fn identifier_exists_in_file(path: &Path, identifier: &str) -> Result<bool, String> {
+pub fn identifier_exists_in_file(identifier: &str, path: &Path) -> Result<bool, String> {
     Ok(find_entry_in_file(identifier, path)?.is_some())
 }
 
@@ -43,18 +43,16 @@ pub fn write_key_to_file(path: &Path, identifier: &str, key: &str) -> Result<(),
 
 pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String> {
     match find_entry_in_file(identifier, path)? {
-        None => return Err(format!("Identifier {} not found", identifier)),
+        None => return Err(format!("Identifier {} not found.", identifier)),
         Some(entry) => {
             let filtered_lines = {
-                let file =
-                    File::open(path).map_err(|error| format!("Error deleting entry - {}", error))?;
+                let file = File::open(path)
+                    .map_err(|error| format!("Error deleting entry - {}", error))?;
                 let reader = BufReader::new(file);
                 let mut lines = Vec::new();
                 for maybe_line in reader.lines() {
                     match maybe_line {
-                        Err(error) => {
-                            return Err(format!("Error deleting entry - {}", error))
-                        }
+                        Err(error) => return Err(format!("Error deleting entry - {}", error)),
                         Ok(line) => {
                             if line != entry {
                                 lines.push(line);
@@ -64,12 +62,11 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
                 }
                 lines
             };
-            let file = OpenOptions::new()
-                .write(true)
-                .open(path)
-                .map_err(|error| format!("Error deleting entry - {}", error))?;
+            let file =
+                File::create(path).map_err(|error| format!("Error deleting entry - {}", error))?;
             let mut writer = BufWriter::new(file);
             let all_lines = filtered_lines.join("\n");
+            println!("all lines {}", all_lines);
             writer
                 .write_all(all_lines.as_bytes())
                 .map_err(|error| format!("Error deleting entry - {}", error))
@@ -80,22 +77,24 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
 fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, String> {
     let file = File::open(path).map_err(|error| format!("Error reading file - {}", error))?;
     let reader = BufReader::new(file);
-    let maybe_entry = reader
-        .lines()
-        .filter_map(|line| match line {
-            Ok(l) => Some(l),
-            Err(error) => {
-                eprintln!("Error reading line: {}", error);
-                None
+    let read_lines = reader.lines().filter_map(|line| match line {
+        Ok(l) => Some(l),
+        Err(error) => {
+            eprintln!("Error reading line: {}", error);
+            None
+        }
+    });
+    for line in read_lines {
+        match line.split(DELIMITER).next() {
+            None => return Err(format!("Error - missing identifier in entry: {}", line)),
+            Some(id) => {
+                if id == identifier {
+                    return Ok(Some(line));
+                }
             }
-        })
-        .find(|line| {
-            line.split(DELIMITER)
-                .next()
-                .and_then(|id| Some(id == identifier))
-                .unwrap_or_else(|| false)
-        });
-    Ok(maybe_entry)
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -112,7 +111,6 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let identifier = "test_site";
         let key = "1234567890";
-
         write_key_to_file(file.path(), identifier, key).unwrap();
 
         let mut lines = BufReader::new(file)
@@ -163,11 +161,10 @@ mod tests {
         let actual_key_1 = read_key_from_file(file.path(), identifier_1)
             .unwrap()
             .unwrap();
+        assert_eq!(actual_key_1, expected_key_1);
         let actual_key_2 = read_key_from_file(file.path(), identifier_2)
             .unwrap()
             .unwrap();
-
-        assert_eq!(actual_key_1, expected_key_1);
         assert_eq!(actual_key_2, expected_key_2);
     }
 
@@ -183,9 +180,10 @@ mod tests {
 
         delete_key_from_file(identifier_1, file.path()).unwrap();
 
-        let deleted_identifier_exists = identifier_exists_in_file(file.path(), identifier_1).unwrap();
+        let deleted_identifier_exists =
+            identifier_exists_in_file(identifier_1, file.path()).unwrap();
         assert_eq!(deleted_identifier_exists, false);
-        let identifier_2_exists = identifier_exists_in_file(file.path(), identifier_2).unwrap();
+        let identifier_2_exists = identifier_exists_in_file(identifier_2, file.path()).unwrap();
         assert_eq!(identifier_2_exists, true);
     }
 
@@ -194,13 +192,12 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let identifier = "test_site";
         let key = String::from("1234567890");
-
         file.write_all(format!("{}{}{}", identifier, DELIMITER, key).as_bytes())
             .unwrap();
 
-        let identifier_exists = identifier_exists_in_file(file.path(), identifier).unwrap();
+        let identifier_exists = identifier_exists_in_file(identifier, file.path()).unwrap();
 
-        assert_eq!(identifier_exists, false);
+        assert_eq!(identifier_exists, true);
     }
 
     #[test]
@@ -208,7 +205,7 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let identifier = "test_site";
 
-        let identifier_exists = identifier_exists_in_file(file.path(), identifier).unwrap();
+        let identifier_exists = identifier_exists_in_file(identifier, file.path()).unwrap();
 
         assert!(identifier_exists == false);
     }
@@ -219,11 +216,10 @@ mod tests {
         let identifier = "test_site";
         let partial_identifier = &identifier[0..2];
         let key = String::from("1234567890");
-
         file.write_all(format!("{}{}{}", identifier, DELIMITER, key).as_bytes())
             .unwrap();
 
-        let identifier_exists = identifier_exists_in_file(file.path(), partial_identifier).unwrap();
+        let identifier_exists = identifier_exists_in_file(partial_identifier, file.path()).unwrap();
 
         assert!(identifier_exists == false);
     }
