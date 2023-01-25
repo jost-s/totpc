@@ -34,7 +34,7 @@ impl ErrorMessage {
 
 pub fn print_help() {
     println!("The One The Password");
-    println!("Usage: totp [command] [identifier]");
+    println!("Usage: totp [command] <identifier>");
     println!();
     println!(
         "All possible commands are:\n- {}\n- {}\n- {}\n- {}",

@@ -65,8 +65,9 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
             let file =
                 File::create(path).map_err(|error| format!("Error deleting entry - {}", error))?;
             let mut writer = BufWriter::new(file);
-            let all_lines = filtered_lines.join("\n");
-            println!("all lines {}", all_lines);
+            let mut all_lines = filtered_lines.join("\n");
+            // append newline at end of file
+            all_lines.push_str("\n");
             writer
                 .write_all(all_lines.as_bytes())
                 .map_err(|error| format!("Error deleting entry - {}", error))
