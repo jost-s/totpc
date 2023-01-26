@@ -64,7 +64,6 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             if identifier_exists {
                 return Err(format!("Error: identifier {} already exists", identifier));
             }
-            println!("identifier is {}", identifier);
 
             println!("Enter key for identifier {}: ", identifier);
             let mut key_base32 = String::new();
@@ -75,7 +74,8 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             if key_base32.is_empty() {
                 return Err(format!("{}", ErrorMessage::EmptyKey.as_str()));
             }
-            println!("key {}", key_base32);
+            // test key for valid Base32 encoding
+            base32::decode(&key_base32)?;
 
             write_key_to_file(file_path, &identifier.to_string(), &key_base32)
                 .map_err(|error| format!("Error: could not create file to save key - {}", error))?;
