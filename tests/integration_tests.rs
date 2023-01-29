@@ -1,61 +1,53 @@
 const BIN: &str = "totp";
 
-mod create {
-    use assert_cmd::prelude::*;
-    use std::process::Command;
-    use totp::{ErrorMessage, COMMAND_SAVE};
+use assert_cmd::prelude::*;
+use std::process::Command;
+use totp::{ErrorMessage, COMMAND_COMPUTE, COMMAND_DELETE, COMMAND_SAVE, COMMAND_UPDATE};
 
-    use crate::BIN;
+#[test]
+fn save_without_identifier_fails() {
+    let mut command = Command::cargo_bin(BIN).unwrap();
+    let command = command.arg(COMMAND_SAVE);
 
-    #[test]
-    fn without_identifier_fails() {
-        let mut command = Command::cargo_bin(BIN).unwrap();
-        let command = command.arg(COMMAND_SAVE);
-
-        command.assert().code(1);
-        let error = command.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains(ErrorMessage::MissingIdentifier.as_str()));
-    }
+    command.assert().code(1);
+    let error = command.unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(ErrorMessage::MissingIdentifier.as_str()));
 }
 
-mod compute {
-    use assert_cmd::prelude::*;
-    use std::process::Command;
-    use totp::{ErrorMessage, COMMAND_COMPUTE};
+#[test]
+fn read_without_identifier_fails() {
+    let mut command = Command::cargo_bin(BIN).unwrap();
+    let command = command.arg(COMMAND_DELETE);
 
-    use crate::BIN;
-
-    #[test]
-    fn without_identifier_fails() {
-        let mut command = Command::cargo_bin(BIN).unwrap();
-        let command = command.arg(COMMAND_COMPUTE);
-
-        command.assert().code(1);
-        let error = command.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains(ErrorMessage::MissingIdentifier.as_str()));
-    }
+    command.assert().code(1);
+    let error = command.unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(ErrorMessage::MissingIdentifier.as_str()));
 }
 
-mod read {
-    use assert_cmd::prelude::*;
-    use std::process::Command;
-    use totp::{ErrorMessage, COMMAND_DELETE};
+#[test]
+fn update_without_identifier_fails() {
+    let mut command = Command::cargo_bin(BIN).unwrap();
+    let command = command.arg(COMMAND_UPDATE);
 
-    use crate::BIN;
+    command.assert().code(1);
+    let error = command.unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(ErrorMessage::MissingIdentifier.as_str()));
+}
 
-    #[test]
-    fn without_identifier_fails() {
-        let mut command = Command::cargo_bin(BIN).unwrap();
-        let command = command.arg(COMMAND_DELETE);
+#[test]
+fn compute_without_identifier_fails() {
+    let mut command = Command::cargo_bin(BIN).unwrap();
+    let command = command.arg(COMMAND_COMPUTE);
 
-        command.assert().code(1);
-        let error = command.unwrap_err();
-        assert!(error
-            .to_string()
-            .contains(ErrorMessage::MissingIdentifier.as_str()));
-    }
+    command.assert().code(1);
+    let error = command.unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(ErrorMessage::MissingIdentifier.as_str()));
 }
