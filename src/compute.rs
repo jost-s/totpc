@@ -5,7 +5,7 @@ pub fn compute(key: &[u8], time_step: u64) -> Result<String, String> {
     let time_step_bytes = time_step.to_be_bytes();
 
     let mut mac = Hmac::<Sha1>::new_from_slice(&key)
-        .map_err(|error| format!("Error: invalid key length - {}", error))?;
+        .map_err(|error| format!("Error: invalid key length - {error}"))?;
     mac.update(&time_step_bytes);
     let result = mac.finalize();
     let code_bytes = result.into_bytes();

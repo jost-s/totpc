@@ -56,16 +56,16 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
                 return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
             }
             ensure_file_exists(file_path)
-                .map_err(|error| format!("Error creating file - {}", error))?;
+                .map_err(|error| format!("Error creating file - {error}"))?;
 
             let identifier = args[2].as_str();
             let identifier_exists = identifier_exists_in_file(identifier, file_path)
-                .map_err(|error| format!("Error reading file - {}", error))?;
+                .map_err(|error| format!("Error reading file - {error}"))?;
             if identifier_exists {
-                return Err(format!("Error: identifier {} already exists", identifier));
+                return Err(format!("Error: identifier {identifier} already exists"));
             }
 
-            println!("Enter key for identifier {}: ", identifier);
+            println!("Enter key for identifier {identifier}: ");
             let mut key_base32 = String::new();
             stdin()
                 .read_line(&mut key_base32)
@@ -79,7 +79,7 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
 
             write_key_to_file(file_path, &identifier.to_string(), &key_base32)
                 .map_err(|error| format!("Error: could not create file to save key - {}", error))?;
-            Ok(format!("Key for identifier {} saved.", identifier))
+            Ok(format!("Key for identifier {identifier} saved."))
         }
         COMMAND_COMPUTE => {
             if args.len() < 3 {
@@ -87,26 +87,23 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             }
             let identifier = args[2].as_str();
             let maybe_key_base32 = read_key_from_file(file_path, identifier)
-                .map_err(|error| format!("Error reading file - {}", error))?;
+                .map_err(|error| format!("Error reading file - {error}"))?;
             match maybe_key_base32 {
                 None => {
-                    return Err(format!(
-                        "Error: no entry found for identifier {}",
-                        identifier
-                    ));
+                    return Err(format!("Error: no entry found for identifier {identifier}"));
                 }
                 Some(key_base32) => {
                     let key = decode(&key_base32)?;
                     let time = std::time::SystemTime::UNIX_EPOCH
                         .elapsed()
                         .map_err(|error| {
-                            format!("Error: could not determine current system time - {}", error)
+                            format!("Error: could not determine current system time - {error}",)
                         })?
                         .as_secs();
                     let time_step_interval = 30;
                     let time_step = time / time_step_interval;
                     let totp = compute(&key, time_step)?;
-                    Ok(format!("Current TOTP for {} is {}", identifier, totp))
+                    Ok(format!("Current TOTP for {identifier} is {totp}"))
                 }
             }
         }
@@ -116,8 +113,8 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             }
             let identifier = args[2].as_str();
             delete_key_from_file(identifier, file_path)?;
-            Ok(format!("Entry for identifier {} deleted.", identifier))
+            Ok(format!("Entry for identifier {identifier} deleted."))
         }
-        _ => Err(format!("Error: unknown command \"{}\"", command)),
+        _ => Err(format!("Error: unknown command \"{command}\"")),
     }
 }
