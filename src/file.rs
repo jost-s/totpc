@@ -75,6 +75,40 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
     }
 }
 
+pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String> {
+    let filtered_lines = {
+        let file = File::open(path).map_err(|error| format!("Error deleting entry - {error}"))?;
+        let reader = BufReader::new(file);
+        let mut lines = Vec::new();
+        for maybe_line in reader.lines() {
+            match maybe_line {
+                Err(error) => return Err(format!("Error deleting entry - {error}")),
+                Ok(line) => match line.split_once(DELIMITER) {
+                    None => {
+                        return Err(format!(
+                            "Error deleting entry - missing identifier in entry: {line}"
+                        ))
+                    }
+                    Some((id, _)) => {
+                        if id != identifier {
+                            lines.push(line);
+                        }
+                    }
+                },
+            }
+        }
+        lines
+    };
+    let file = File::create(path).map_err(|error| format!("Error deleting entry - {error}"))?;
+    let mut writer = BufWriter::new(file);
+    let mut all_lines = filtered_lines.join("\n");
+    // append newline at end of file
+    all_lines.push_str("\n");
+    writer
+        .write_all(all_lines.as_bytes())
+        .map_err(|error| format!("Error deleting entry - {error}"))
+}
+
 fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, String> {
     let file = File::open(path).map_err(|error| format!("Error reading file - {error}"))?;
     let reader = BufReader::new(file);
