@@ -28,7 +28,7 @@ pub fn identifier_exists_in_file(identifier: &str, path: &Path) -> Result<bool, 
     Ok(find_entry_in_file(identifier, path)?.is_some())
 }
 
-pub fn write_key_to_file(path: &Path, identifier: &str, key: &str) -> Result<(), String> {
+pub fn write_key_to_file(identifier: &str, key: &str, path: &Path) -> Result<(), String> {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -41,38 +41,34 @@ pub fn write_key_to_file(path: &Path, identifier: &str, key: &str) -> Result<(),
         .map_err(|error| format!("Error writing to file - {error}"))
 }
 
-pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String> {
-    match find_entry_in_file(identifier, path)? {
-        None => return Err(format!("Identifier {identifier} not found.")),
-        Some(entry) => {
-            let filtered_lines = {
-                let file =
-                    File::open(path).map_err(|error| format!("Error deleting entry - {error}"))?;
-                let reader = BufReader::new(file);
-                let mut lines = Vec::new();
-                for maybe_line in reader.lines() {
-                    match maybe_line {
-                        Err(error) => return Err(format!("Error deleting entry - {error}")),
-                        Ok(line) => {
-                            if line != entry {
-                                lines.push(line);
-                            }
+pub fn update_key_in_file(identifier: &str, key: &str, path: &Path) -> Result<(), String> {
+    let updated_lines = {
+        let file = File::open(path).map_err(|error| format!("Error updating entry - {error}"))?;
+        let reader = BufReader::new(file);
+        let mut lines = Vec::new();
+        for maybe_line in reader.lines() {
+            match maybe_line {
+                Err(error) => return Err(format!("Error updating entry - {error}")),
+                Ok(entry) => match entry.split_once(DELIMITER) {
+                    None => {
+                        return Err(format!(
+                            "Error updating entry - missing identifier in entry: {entry}"
+                        ))
+                    }
+                    Some((id, _)) => {
+                        if id == identifier {
+                            let updated_entry = format!("{identifier}{DELIMITER}{key}");
+                            lines.push(updated_entry);
+                        } else {
+                            lines.push(entry)
                         }
                     }
-                }
-                lines
-            };
-            let file =
-                File::create(path).map_err(|error| format!("Error deleting entry - {error}"))?;
-            let mut writer = BufWriter::new(file);
-            let mut all_lines = filtered_lines.join("\n");
-            // append newline at end of file
-            all_lines.push_str("\n");
-            writer
-                .write_all(all_lines.as_bytes())
-                .map_err(|error| format!("Error deleting entry - {error}"))
+                },
+            }
         }
-    }
+        lines
+    };
+    write_lines_to_file(updated_lines, path)
 }
 
 pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String> {
@@ -83,15 +79,15 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
         for maybe_line in reader.lines() {
             match maybe_line {
                 Err(error) => return Err(format!("Error deleting entry - {error}")),
-                Ok(line) => match line.split_once(DELIMITER) {
+                Ok(entry) => match entry.split_once(DELIMITER) {
                     None => {
                         return Err(format!(
-                            "Error deleting entry - missing identifier in entry: {line}"
+                            "Error deleting entry - missing identifier in entry: {entry}"
                         ))
                     }
                     Some((id, _)) => {
                         if id != identifier {
-                            lines.push(line);
+                            lines.push(entry);
                         }
                     }
                 },
@@ -99,14 +95,18 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
         }
         lines
     };
-    let file = File::create(path).map_err(|error| format!("Error deleting entry - {error}"))?;
+    write_lines_to_file(filtered_lines, path)
+}
+
+fn write_lines_to_file(lines: Vec<String>, path: &Path) -> Result<(), String> {
+    let file = File::create(path).map_err(|error| format!("Error writing entry - {error}"))?;
     let mut writer = BufWriter::new(file);
-    let mut all_lines = filtered_lines.join("\n");
+    let mut all_lines = lines.join("\n");
     // append newline at end of file
     all_lines.push_str("\n");
     writer
         .write_all(all_lines.as_bytes())
-        .map_err(|error| format!("Error deleting entry - {error}"))
+        .map_err(|error| format!("Error writing entry - {error}"))
 }
 
 fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, String> {
@@ -120,9 +120,9 @@ fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, S
         }
     });
     for line in read_lines {
-        match line.split(DELIMITER).next() {
+        match line.split_once(DELIMITER) {
             None => return Err(format!("Error - missing identifier in entry: {line}")),
-            Some(id) => {
+            Some((id, _)) => {
                 if id == identifier {
                     return Ok(Some(line));
                 }
@@ -135,8 +135,8 @@ fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, S
 #[cfg(test)]
 mod tests {
     use crate::file::{
-        delete_key_from_file, identifier_exists_in_file, read_key_from_file, write_key_to_file,
-        DELIMITER,
+        delete_key_from_file, find_entry_in_file, identifier_exists_in_file, read_key_from_file,
+        update_key_in_file, write_key_to_file, DELIMITER,
     };
     use std::io::{BufRead, BufReader, Write};
     use tempfile::NamedTempFile;
@@ -146,7 +146,7 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let identifier = "test_site";
         let key = "1234567890";
-        write_key_to_file(file.path(), identifier, key).unwrap();
+        write_key_to_file(identifier, key, file.path()).unwrap();
 
         let mut lines = BufReader::new(file)
             .lines()
@@ -190,8 +190,8 @@ mod tests {
         let expected_key_1 = "test_key_1";
         let expected_key_2 = "test_key_2";
 
-        write_key_to_file(file.path(), identifier_1, expected_key_1).unwrap();
-        write_key_to_file(file.path(), identifier_2, expected_key_2).unwrap();
+        write_key_to_file(identifier_1, expected_key_1, file.path()).unwrap();
+        write_key_to_file(identifier_2, expected_key_2, file.path()).unwrap();
 
         let actual_key_1 = read_key_from_file(file.path(), identifier_1)
             .unwrap()
@@ -204,14 +204,33 @@ mod tests {
     }
 
     #[test]
+    fn update_entry() {
+        let file = NamedTempFile::new().unwrap();
+        let identifier = "id";
+        let key = "key";
+        let updated_key = "key_updated";
+        write_key_to_file(identifier, key, file.path()).unwrap();
+
+        update_key_in_file(identifier, updated_key, file.path()).unwrap();
+
+        let updated_entry = find_entry_in_file(identifier, file.path())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            updated_entry,
+            format!("{identifier}{DELIMITER}{updated_key}")
+        );
+    }
+
+    #[test]
     fn delete_entry() {
         let file = NamedTempFile::new().unwrap();
         let identifier_1 = "id_1";
         let identifier_2 = "id_2";
         let key_1 = "key_1";
         let key_2 = "key_2";
-        write_key_to_file(file.path(), identifier_1, key_1).unwrap();
-        write_key_to_file(file.path(), identifier_2, key_2).unwrap();
+        write_key_to_file(identifier_1, key_1, file.path()).unwrap();
+        write_key_to_file(identifier_2, key_2, file.path()).unwrap();
 
         delete_key_from_file(identifier_1, file.path()).unwrap();
 

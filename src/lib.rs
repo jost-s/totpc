@@ -5,7 +5,9 @@ use compute::compute;
 use file::{delete_key_from_file, read_key_from_file};
 
 use crate::base32::decode;
-use crate::file::{ensure_file_exists, identifier_exists_in_file, write_key_to_file};
+use crate::file::{
+    ensure_file_exists, identifier_exists_in_file, update_key_in_file, write_key_to_file,
+};
 
 mod base32;
 pub mod compute;
@@ -14,6 +16,7 @@ mod file;
 pub const COMMAND_COMPUTE: &str = "compute";
 pub const COMMAND_LOAD: &str = "read";
 pub const COMMAND_SAVE: &str = "save";
+pub const COMMAND_UPDATE: &str = "update";
 pub const COMMAND_DELETE: &str = "delete";
 
 pub enum ErrorMessage {
@@ -37,8 +40,7 @@ pub fn print_help() {
     println!("Usage: totp [command] <identifier>");
     println!();
     println!(
-        "All possible commands are:\n- {}\n- {}\n- {}\n- {}",
-        COMMAND_COMPUTE, COMMAND_LOAD, COMMAND_SAVE, COMMAND_DELETE
+        "All possible commands are:\n- {COMMAND_COMPUTE}\n- {COMMAND_LOAD}\n- {COMMAND_SAVE}\n- {COMMAND_UPDATE}\n- {COMMAND_DELETE}"
     );
 }
 
@@ -55,31 +57,39 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             if args.len() < 3 {
                 return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
             }
-            ensure_file_exists(file_path)
-                .map_err(|error| format!("Error creating file - {error}"))?;
+            ensure_file_exists(file_path)?;
 
             let identifier = args[2].as_str();
-            let identifier_exists = identifier_exists_in_file(identifier, file_path)
-                .map_err(|error| format!("Error reading file - {error}"))?;
+            let identifier_exists = identifier_exists_in_file(identifier, file_path)?;
             if identifier_exists {
                 return Err(format!("Error: identifier {identifier} already exists"));
             }
 
-            println!("Enter key for identifier {identifier}: ");
-            let mut key_base32 = String::new();
-            stdin()
-                .read_line(&mut key_base32)
-                .map_err(|error| format!("Error entering key: {}", error))?;
-            key_base32 = key_base32.trim().replace(" ", "").to_string();
-            if key_base32.is_empty() {
-                return Err(format!("{}", ErrorMessage::EmptyKey.as_str()));
-            }
-            // test key for valid Base32 encoding
-            base32::decode(&key_base32)?;
-
-            write_key_to_file(file_path, &identifier.to_string(), &key_base32)
-                .map_err(|error| format!("Error: could not create file to save key - {}", error))?;
+            let key_base32 = read_key_for_identifier(identifier)?;
+            write_key_to_file(&identifier.to_string(), &key_base32, file_path)?;
             Ok(format!("Key for identifier {identifier} saved."))
+        }
+        COMMAND_UPDATE => {
+            if args.len() < 3 {
+                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+            }
+            let identifier = args[2].as_str();
+            let identifier_exists = identifier_exists_in_file(identifier, file_path)?;
+            if !identifier_exists {
+                return Err(format!("Error: identifier {identifier} does not exist"));
+            }
+
+            let key_base32 = read_key_for_identifier(identifier)?;
+            update_key_in_file(identifier, &key_base32, file_path)?;
+            Ok(format!("Entry for identifier {identifier} updated."))
+        }
+        COMMAND_DELETE => {
+            if args.len() < 3 {
+                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+            }
+            let identifier = args[2].as_str();
+            delete_key_from_file(identifier, file_path)?;
+            Ok(format!("Entry for identifier {identifier} deleted."))
         }
         COMMAND_COMPUTE => {
             if args.len() < 3 {
@@ -107,14 +117,25 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
                 }
             }
         }
-        COMMAND_DELETE => {
-            if args.len() < 3 {
-                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
-            }
-            let identifier = args[2].as_str();
-            delete_key_from_file(identifier, file_path)?;
-            Ok(format!("Entry for identifier {identifier} deleted."))
-        }
         _ => Err(format!("Error: unknown command \"{command}\"")),
     }
+}
+
+fn read_key_for_identifier(identifier: &str) -> Result<String, String> {
+    println!("Enter key for identifier {identifier}: ");
+    let mut key_base32 = String::new();
+    stdin()
+        .read_line(&mut key_base32)
+        .map_err(|error| format!("Error entering key: {}", error))?;
+    if key_base32.is_empty() {
+        return Err(format!("{}", ErrorMessage::EmptyKey.as_str()));
+    }
+    key_base32 = key_base32
+        .trim()
+        .replace(" ", "")
+        .to_string()
+        .to_uppercase();
+    // test key for valid Base32 encoding
+    base32::decode(&key_base32)?;
+    Ok(key_base32)
 }
