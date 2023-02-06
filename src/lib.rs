@@ -50,12 +50,13 @@ pub fn print_help() {
 }
 
 pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
-    if args.len() < 2 {
-        print_help();
-        println!();
-        return Err(format!("No command specified."));
-    }
-    let command = args[1].as_str();
+    let command = {
+        if args.len() < 2 {
+            COMMAND_LIST
+        } else {
+            args[1].as_str()
+        }
+    };
 
     match command {
         COMMAND_SAVE => {
