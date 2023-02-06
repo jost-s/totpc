@@ -41,6 +41,23 @@ pub fn write_key_to_file(identifier: &str, key: &str, path: &Path) -> Result<(),
         .map_err(|error| format!("Error writing to file - {error}"))
 }
 
+pub fn list_identifiers(path: &Path) -> Result<Vec<String>, String> {
+    let file = File::open(path).map_err(|error| format!("Error reading file - {error}"))?;
+    let reader = BufReader::new(file);
+    let mut list = Vec::new();
+    for line in reader.lines() {
+        match line {
+            Err(error) => return Err(format!("Error reading file - {error}")),
+            Ok(entry) => match entry.split_once(DELIMITER) {
+                None => return Err(format!("Error reading file - {entry}")),
+                Some((identifier, _)) => list.push(identifier.to_string()),
+            },
+        }
+    }
+    list.sort();
+    Ok(list)
+}
+
 pub fn update_key_in_file(identifier: &str, key: &str, path: &Path) -> Result<(), String> {
     let updated_lines = {
         let file = File::open(path).map_err(|error| format!("Error updating entry - {error}"))?;
@@ -135,8 +152,8 @@ fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, S
 #[cfg(test)]
 mod tests {
     use crate::file::{
-        delete_key_from_file, find_entry_in_file, identifier_exists_in_file, read_key_from_file,
-        update_key_in_file, write_key_to_file, DELIMITER,
+        delete_key_from_file, find_entry_in_file, identifier_exists_in_file, list_identifiers,
+        read_key_from_file, update_key_in_file, write_key_to_file, DELIMITER,
     };
     use std::io::{BufRead, BufReader, Write};
     use tempfile::NamedTempFile;
@@ -201,6 +218,22 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(actual_key_2, expected_key_2);
+    }
+
+    #[test]
+    fn list() {
+        let file = NamedTempFile::new().unwrap();
+        let identifier_1 = "test_id_1";
+        let identifier_2 = "test_id_2";
+        let expected_key_1 = "test_key_1";
+        let expected_key_2 = "test_key_2";
+        write_key_to_file(identifier_2, expected_key_2, file.path()).unwrap();
+        write_key_to_file(identifier_1, expected_key_1, file.path()).unwrap();
+
+        let identifier_list = list_identifiers(file.path()).unwrap();
+        // list should ordered by identifier, ascending
+        assert_eq!(identifier_list[0], identifier_1);
+        assert_eq!(identifier_list[1], identifier_2);
     }
 
     #[test]

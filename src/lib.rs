@@ -2,7 +2,7 @@ use std::io::stdin;
 use std::path::Path;
 
 use compute::compute;
-use file::{delete_key_from_file, read_key_from_file};
+use file::{delete_key_from_file, list_identifiers, read_key_from_file};
 
 use crate::base32::decode;
 use crate::file::{
@@ -18,6 +18,11 @@ pub const COMMAND_LOAD: &str = "read";
 pub const COMMAND_SAVE: &str = "save";
 pub const COMMAND_UPDATE: &str = "update";
 pub const COMMAND_DELETE: &str = "delete";
+pub const COMMAND_LIST: &str = "list";
+
+const IDENTIFIER_LIST_HEADER: &str = "TOTP identifiers\n";
+const IDENTIFIER_LIST_ITEM_PREFIX: &str = "├─";
+const IDENTIFIER_LIST_LAST_ITEM_PREFIX: &str = "└─";
 
 pub enum ErrorMessage {
     EmptyKey,
@@ -91,6 +96,7 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             delete_key_from_file(identifier, file_path)?;
             Ok(format!("Entry for identifier {identifier} deleted."))
         }
+        COMMAND_LIST => Ok(print_list(&list_identifiers(file_path)?)),
         COMMAND_COMPUTE => {
             if args.len() < 3 {
                 return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
@@ -138,4 +144,55 @@ fn read_key_for_identifier(identifier: &str) -> Result<String, String> {
     // test key for valid Base32 encoding
     base32::decode(&key_base32)?;
     Ok(key_base32)
+}
+
+fn print_list(identifier_list: &Vec<String>) -> String {
+    let mut printed_list = String::from(IDENTIFIER_LIST_HEADER);
+    identifier_list[0..identifier_list.len() - 1]
+        .iter()
+        .for_each(|identifier| {
+            printed_list.push_str(format!("{IDENTIFIER_LIST_ITEM_PREFIX} {identifier}\n").as_str())
+        });
+    printed_list.push_str(
+        format!(
+            "{IDENTIFIER_LIST_LAST_ITEM_PREFIX} {}",
+            identifier_list[identifier_list.len() - 1]
+        )
+        .as_str(),
+    );
+    printed_list
+}
+
+mod tests {
+    use crate::{
+        print_list, IDENTIFIER_LIST_HEADER, IDENTIFIER_LIST_ITEM_PREFIX,
+        IDENTIFIER_LIST_LAST_ITEM_PREFIX,
+    };
+
+    #[test]
+    fn print_identifier_list() {
+        let identifiers = vec![
+            String::from("identifier_1"),
+            String::from("identifier_2"),
+            String::from("identifier_3"),
+        ];
+        let mut expected_printed_list = IDENTIFIER_LIST_HEADER.to_string();
+        identifiers[0..identifiers.len() - 1]
+            .iter()
+            .for_each(|identifier| {
+                expected_printed_list
+                    .push_str(format!("{IDENTIFIER_LIST_ITEM_PREFIX} {identifier}\n").as_str())
+            });
+        expected_printed_list.push_str(
+            format!(
+                "{IDENTIFIER_LIST_LAST_ITEM_PREFIX} {}",
+                identifiers.last().unwrap()
+            )
+            .as_str(),
+        );
+
+        let printed_list = print_list(&identifiers);
+
+        assert_eq!(printed_list, expected_printed_list);
+    }
 }
