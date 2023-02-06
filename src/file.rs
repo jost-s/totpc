@@ -4,7 +4,37 @@ use std::{
     path::Path,
 };
 
-const DELIMITER: &str = " ";
+pub const DELIMITER: &str = " ";
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Entry {
+    identifier: String,
+    key: String,
+}
+
+impl Entry {
+    fn new(identifier: &str, key: &str) -> Entry {
+        Self {
+            identifier: identifier.to_string(),
+            key: key.to_string(),
+        }
+    }
+
+    fn to_string(self) -> String {
+        format!("{}{}{}\n", self.identifier, DELIMITER, self.key)
+    }
+}
+
+impl TryFrom<String> for Entry {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.split_once(DELIMITER) {
+            None => return Err(format!("Error - missing identifier in entry: {value}")),
+            Some((identifier, key)) => Ok(Entry::new(identifier, key)),
+        }
+    }
+}
 
 pub fn ensure_file_exists(path: &Path) -> Result<(), String> {
     if path.is_file() {
@@ -16,11 +46,7 @@ pub fn ensure_file_exists(path: &Path) -> Result<(), String> {
 }
 
 pub fn read_key_from_file(path: &Path, identifier: &str) -> Result<Option<String>, String> {
-    let maybe_key =
-        find_entry_in_file(identifier, path)?.and_then(|line| match line.split(DELIMITER).last() {
-            None => None,
-            Some(key) => Some(key.to_string()),
-        });
+    let maybe_key = find_entry_in_file(identifier, path)?.and_then(|entry| Some(entry.key));
     Ok(maybe_key)
 }
 
@@ -35,27 +61,27 @@ pub fn write_key_to_file(identifier: &str, key: &str, path: &Path) -> Result<(),
         .open(path)
         .map_err(|error| format!("Error opening file with write access - {error}"))?;
     let mut writer = BufWriter::new(file);
-    let entry = format!("{}{}{}\n", identifier, DELIMITER, key);
+    let entry = Entry::new(identifier, key);
     writer
-        .write_all(entry.as_bytes())
+        .write_all(entry.to_string().as_bytes())
         .map_err(|error| format!("Error writing to file - {error}"))
 }
 
 pub fn list_identifiers(path: &Path) -> Result<Vec<String>, String> {
     let file = File::open(path).map_err(|error| format!("Error reading file - {error}"))?;
     let reader = BufReader::new(file);
-    let mut list = Vec::new();
-    for line in reader.lines() {
-        match line {
+    let mut lines = Vec::new();
+    for maybe_line in reader.lines() {
+        match maybe_line {
             Err(error) => return Err(format!("Error reading file - {error}")),
-            Ok(entry) => match entry.split_once(DELIMITER) {
-                None => return Err(format!("Error reading file - {entry}")),
-                Some((identifier, _)) => list.push(identifier.to_string()),
-            },
+            Ok(line) => {
+                let entry = Entry::try_from(line)?;
+                lines.push(entry.identifier);
+            }
         }
     }
-    list.sort();
-    Ok(list)
+    lines.sort();
+    Ok(lines)
 }
 
 pub fn update_key_in_file(identifier: &str, key: &str, path: &Path) -> Result<(), String> {
@@ -66,21 +92,13 @@ pub fn update_key_in_file(identifier: &str, key: &str, path: &Path) -> Result<()
         for maybe_line in reader.lines() {
             match maybe_line {
                 Err(error) => return Err(format!("Error updating entry - {error}")),
-                Ok(entry) => match entry.split_once(DELIMITER) {
-                    None => {
-                        return Err(format!(
-                            "Error updating entry - missing identifier in entry: {entry}"
-                        ))
+                Ok(line) => {
+                    let mut entry = Entry::try_from(line)?;
+                    if entry.identifier == identifier {
+                        entry.key = key.to_string();
                     }
-                    Some((id, _)) => {
-                        if id == identifier {
-                            let updated_entry = format!("{identifier}{DELIMITER}{key}");
-                            lines.push(updated_entry);
-                        } else {
-                            lines.push(entry)
-                        }
-                    }
-                },
+                    lines.push(entry.to_string())
+                }
             }
         }
         lines
@@ -96,18 +114,12 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
         for maybe_line in reader.lines() {
             match maybe_line {
                 Err(error) => return Err(format!("Error deleting entry - {error}")),
-                Ok(entry) => match entry.split_once(DELIMITER) {
-                    None => {
-                        return Err(format!(
-                            "Error deleting entry - missing identifier in entry: {entry}"
-                        ))
+                Ok(line) => {
+                    let entry = Entry::try_from(line)?;
+                    if entry.identifier != identifier {
+                        lines.push(entry.to_string());
                     }
-                    Some((id, _)) => {
-                        if id != identifier {
-                            lines.push(entry);
-                        }
-                    }
-                },
+                }
             }
         }
         lines
@@ -118,15 +130,13 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
 fn write_lines_to_file(lines: Vec<String>, path: &Path) -> Result<(), String> {
     let file = File::create(path).map_err(|error| format!("Error writing entry - {error}"))?;
     let mut writer = BufWriter::new(file);
-    let mut all_lines = lines.join("\n");
-    // append newline at end of file
-    all_lines.push_str("\n");
+    let all_lines = lines.join("\n");
     writer
         .write_all(all_lines.as_bytes())
         .map_err(|error| format!("Error writing entry - {error}"))
 }
 
-fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, String> {
+fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<Entry>, String> {
     let file = File::open(path).map_err(|error| format!("Error reading file - {error}"))?;
     let reader = BufReader::new(file);
     let read_lines = reader.lines().filter_map(|line| match line {
@@ -137,13 +147,9 @@ fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, S
         }
     });
     for line in read_lines {
-        match line.split_once(DELIMITER) {
-            None => return Err(format!("Error - missing identifier in entry: {line}")),
-            Some((id, _)) => {
-                if id == identifier {
-                    return Ok(Some(line));
-                }
-            }
+        let entry = Entry::try_from(line)?;
+        if entry.identifier == identifier {
+            return Ok(Some(entry));
         }
     }
     Ok(None)
@@ -153,7 +159,7 @@ fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<String>, S
 mod tests {
     use crate::file::{
         delete_key_from_file, find_entry_in_file, identifier_exists_in_file, list_identifiers,
-        read_key_from_file, update_key_in_file, write_key_to_file, DELIMITER,
+        read_key_from_file, update_key_in_file, write_key_to_file, Entry, DELIMITER,
     };
     use std::io::{BufRead, BufReader, Write};
     use tempfile::NamedTempFile;
@@ -165,13 +171,10 @@ mod tests {
         let key = "1234567890";
         write_key_to_file(identifier, key, file.path()).unwrap();
 
-        let mut lines = BufReader::new(file)
-            .lines()
-            .enumerate()
-            .map(|(_, line)| line.unwrap());
-        assert!(lines
-            .find(|line| line == format!("{identifier}{DELIMITER}{key}").as_str())
-            .is_some());
+        let mut lines = BufReader::new(file).lines().map(|line| line.unwrap());
+        let actual_entry = Entry::try_from(lines.next().unwrap()).unwrap();
+        let expected_entry = Entry::new(identifier, key);
+        assert_eq!(actual_entry, expected_entry);
     }
 
     #[test]
@@ -231,7 +234,7 @@ mod tests {
         write_key_to_file(identifier_1, expected_key_1, file.path()).unwrap();
 
         let identifier_list = list_identifiers(file.path()).unwrap();
-        // list should ordered by identifier, ascending
+        // list should be ordered by identifier, ascending
         assert_eq!(identifier_list[0], identifier_1);
         assert_eq!(identifier_list[1], identifier_2);
     }
@@ -249,10 +252,7 @@ mod tests {
         let updated_entry = find_entry_in_file(identifier, file.path())
             .unwrap()
             .unwrap();
-        assert_eq!(
-            updated_entry,
-            format!("{identifier}{DELIMITER}{updated_key}")
-        );
+        assert_eq!(updated_entry, Entry::new(identifier, updated_key));
     }
 
     #[test]
@@ -278,9 +278,9 @@ mod tests {
     fn identifier_exists() {
         let mut file = NamedTempFile::new().unwrap();
         let identifier = "test_site";
-        let key = String::from("1234567890");
-        file.write_all(format!("{identifier}{DELIMITER}{key}").as_bytes())
-            .unwrap();
+        let key = "1234567890";
+        let entry = Entry::new(identifier, key);
+        file.write_all(entry.to_string().as_bytes()).unwrap();
 
         let identifier_exists = identifier_exists_in_file(identifier, file.path()).unwrap();
 
@@ -302,9 +302,9 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let identifier = "test_site";
         let partial_identifier = &identifier[0..2];
-        let key = String::from("1234567890");
-        file.write_all(format!("{identifier}{DELIMITER}{key}").as_bytes())
-            .unwrap();
+        let key = "1234567890";
+        let entry = Entry::new(identifier, key);
+        file.write_all(entry.to_string().as_bytes()).unwrap();
 
         let identifier_exists = identifier_exists_in_file(partial_identifier, file.path()).unwrap();
 

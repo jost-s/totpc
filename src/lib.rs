@@ -164,6 +164,7 @@ fn print_list(identifier_list: &Vec<String>) -> String {
     printed_list
 }
 
+#[cfg(test)]
 mod tests {
     use crate::{
         print_list, IDENTIFIER_LIST_HEADER, IDENTIFIER_LIST_ITEM_PREFIX,
