@@ -45,7 +45,7 @@ pub fn ensure_file_exists(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("Error reading file - {error}"))
 }
 
-pub fn read_key_from_file(path: &Path, identifier: &str) -> Result<Option<String>, String> {
+pub fn read_key_from_file(identifier: &str, path: &Path) -> Result<Option<String>, String> {
     let maybe_key = find_entry_in_file(identifier, path)?.and_then(|entry| Some(entry.key));
     Ok(maybe_key)
 }
@@ -186,7 +186,7 @@ mod tests {
         file.write_all(format!("{identifier}{DELIMITER}{expected_key}").as_bytes())
             .unwrap();
 
-        let actual_key = read_key_from_file(file.path(), identifier)
+        let actual_key = read_key_from_file(identifier, file.path())
             .unwrap()
             .unwrap();
         assert_eq!(expected_key, actual_key);
@@ -197,7 +197,7 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let identifier = "test_site";
 
-        let actual_result = read_key_from_file(file.path(), identifier).unwrap();
+        let actual_result = read_key_from_file(identifier, file.path()).unwrap();
 
         assert!(actual_result.is_none());
     }
@@ -213,11 +213,11 @@ mod tests {
         write_key_to_file(identifier_1, expected_key_1, file.path()).unwrap();
         write_key_to_file(identifier_2, expected_key_2, file.path()).unwrap();
 
-        let actual_key_1 = read_key_from_file(file.path(), identifier_1)
+        let actual_key_1 = read_key_from_file(identifier_1, file.path())
             .unwrap()
             .unwrap();
         assert_eq!(actual_key_1, expected_key_1);
-        let actual_key_2 = read_key_from_file(file.path(), identifier_2)
+        let actual_key_2 = read_key_from_file(identifier_2, file.path())
             .unwrap()
             .unwrap();
         assert_eq!(actual_key_2, expected_key_2);

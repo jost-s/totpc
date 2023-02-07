@@ -75,6 +75,18 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             write_key_to_file(&identifier.to_string(), &key_base32, file_path)?;
             Ok(format!("Key for identifier {identifier} saved."))
         }
+        COMMAND_LOAD => {
+            if args.len() < 3 {
+                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+            }
+            ensure_file_exists(file_path)?;
+
+            let identifier = args[2].as_str();
+            match read_key_from_file(identifier, file_path)? {
+                None => Ok(format!("Identifier not found.")),
+                Some(key) => Ok(format!("Key for identifier {identifier}: {key}")),
+            }
+        }
         COMMAND_UPDATE => {
             if args.len() < 3 {
                 return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
@@ -103,7 +115,7 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
                 return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
             }
             let identifier = args[2].as_str();
-            let maybe_key_base32 = read_key_from_file(file_path, identifier)
+            let maybe_key_base32 = read_key_from_file(identifier, file_path)
                 .map_err(|error| format!("Error reading file - {error}"))?;
             match maybe_key_base32 {
                 None => {
