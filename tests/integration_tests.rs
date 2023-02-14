@@ -13,7 +13,7 @@ fn save_without_identifier_fails() {
     let error = command.unwrap_err();
     assert!(error
         .to_string()
-        .contains(ErrorMessage::MissingIdentifier.as_str()));
+        .contains(&ErrorMessage::MissingIdentifier(COMMAND_SAVE).to_string()));
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn read_without_identifier_fails() {
     let error = command.unwrap_err();
     assert!(error
         .to_string()
-        .contains(ErrorMessage::MissingIdentifier.as_str()));
+        .contains(&ErrorMessage::MissingIdentifier(COMMAND_DELETE).to_string()));
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn update_without_identifier_fails() {
     let error = command.unwrap_err();
     assert!(error
         .to_string()
-        .contains(ErrorMessage::MissingIdentifier.as_str()));
+        .contains(&ErrorMessage::MissingIdentifier(COMMAND_UPDATE).to_string()));
 }
 
 #[test]
@@ -49,5 +49,5 @@ fn compute_without_identifier_fails() {
     let error = command.unwrap_err();
     assert!(error
         .to_string()
-        .contains(ErrorMessage::MissingIdentifier.as_str()));
+        .contains(&ErrorMessage::MissingIdentifier(COMMAND_COMPUTE).to_string()));
 }
