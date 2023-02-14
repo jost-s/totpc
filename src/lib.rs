@@ -14,39 +14,55 @@ pub mod compute;
 mod file;
 
 pub const COMMAND_COMPUTE: &str = "compute";
+pub const COMMAND_SHORT_COMPUTE: &str = "c";
 pub const COMMAND_LOAD: &str = "read";
+pub const COMMAND_SHORT_LOAD: &str = "r";
 pub const COMMAND_SAVE: &str = "save";
+pub const COMMAND_SHORT_SAVE: &str = "s";
 pub const COMMAND_UPDATE: &str = "update";
+pub const COMMAND_SHORT_UPDATE: &str = "u";
 pub const COMMAND_DELETE: &str = "delete";
+pub const COMMAND_SHORT_DELETE: &str = "d";
 pub const COMMAND_LIST: &str = "list";
+pub const COMMAND_SHORT_LIST: &str = "l";
 
 const IDENTIFIER_LIST_HEADER: &str = "TOTP identifiers\n";
 const IDENTIFIER_LIST_ITEM_PREFIX: &str = "├─";
 const IDENTIFIER_LIST_LAST_ITEM_PREFIX: &str = "└─";
 
-pub enum ErrorMessage {
+pub enum ErrorMessage<'a> {
     EmptyKey,
-    MissingIdentifier,
+    MissingIdentifier(&'a str),
 }
 
-impl ErrorMessage {
-    pub fn as_str(&self) -> &'static str {
+impl ErrorMessage<'_> {
+    pub fn to_string(&self) -> String {
         match self {
-            Self::EmptyKey => "Error: key must not be empty",
-            Self::MissingIdentifier => {
-                "Error: missing identifier - specify the identifier to use for the command"
+            Self::EmptyKey => "Error: key must not be empty".to_string(),
+            Self::MissingIdentifier(command) => {
+                format!("Error: missing identifier - specify the identifier to use with {command}")
             }
         }
     }
 }
 
-pub fn print_help() {
-    println!("The One The Password");
-    println!("Usage: totp [command] <identifier>");
-    println!();
-    println!(
-        "All possible commands are:\n- {COMMAND_COMPUTE}\n- {COMMAND_LOAD}\n- {COMMAND_SAVE}\n- {COMMAND_UPDATE}\n- {COMMAND_DELETE}"
-    );
+impl Into<String> for ErrorMessage<'_> {
+    fn into(self) -> String {
+        String::from(self.to_string())
+    }
+}
+
+pub fn get_help_text() -> String {
+    format!(
+        "Usage: totp <command> [<identifier>]
+
+Commands:
+    {COMMAND_COMPUTE}, {COMMAND_SHORT_COMPUTE}   compute current password for given identifier
+    {COMMAND_DELETE}, {COMMAND_SHORT_DELETE}    delete entry of given identifier
+    {COMMAND_LOAD}, {COMMAND_SHORT_LOAD}      output associated key of given identifier
+    {COMMAND_SAVE}, {COMMAND_SHORT_SAVE}      save key for given identifier
+    {COMMAND_UPDATE}, {COMMAND_SHORT_UPDATE}    prompt to update key of given identifier"
+    )
 }
 
 pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
@@ -59,9 +75,9 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
     };
 
     match command {
-        COMMAND_SAVE => {
+        COMMAND_SAVE | COMMAND_SHORT_SAVE => {
             if args.len() < 3 {
-                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+                return Err(ErrorMessage::MissingIdentifier(COMMAND_SAVE).into());
             }
             ensure_file_exists(file_path)?;
 
@@ -75,9 +91,9 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             write_key_to_file(&identifier.to_string(), &key_base32, file_path)?;
             Ok(format!("Key for identifier {identifier} saved."))
         }
-        COMMAND_LOAD => {
+        COMMAND_LOAD | COMMAND_SHORT_LOAD => {
             if args.len() < 3 {
-                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+                return Err(ErrorMessage::MissingIdentifier(COMMAND_LOAD).into());
             }
             ensure_file_exists(file_path)?;
 
@@ -87,9 +103,9 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
                 Some(key) => Ok(format!("Key for identifier {identifier}: {key}")),
             }
         }
-        COMMAND_UPDATE => {
+        COMMAND_UPDATE | COMMAND_SHORT_UPDATE => {
             if args.len() < 3 {
-                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+                return Err(ErrorMessage::MissingIdentifier(COMMAND_UPDATE).into());
             }
             let identifier = args[2].as_str();
             let identifier_exists = identifier_exists_in_file(identifier, file_path)?;
@@ -101,18 +117,18 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
             update_key_in_file(identifier, &key_base32, file_path)?;
             Ok(format!("Entry for identifier {identifier} updated."))
         }
-        COMMAND_DELETE => {
+        COMMAND_DELETE | COMMAND_SHORT_DELETE => {
             if args.len() < 3 {
-                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+                return Err(ErrorMessage::MissingIdentifier(COMMAND_DELETE).into());
             }
             let identifier = args[2].as_str();
             delete_key_from_file(identifier, file_path)?;
             Ok(format!("Entry for identifier {identifier} deleted."))
         }
-        COMMAND_LIST => Ok(print_list(&list_identifiers(file_path)?)),
-        COMMAND_COMPUTE => {
+        COMMAND_LIST | COMMAND_SHORT_LIST => Ok(print_list(&list_identifiers(file_path)?)),
+        COMMAND_COMPUTE | COMMAND_SHORT_COMPUTE => {
             if args.len() < 3 {
-                return Err(format!("{}", ErrorMessage::MissingIdentifier.as_str()));
+                return Err(ErrorMessage::MissingIdentifier(COMMAND_COMPUTE).into());
             }
             let identifier = args[2].as_str();
             let maybe_key_base32 = read_key_from_file(identifier, file_path)
@@ -136,7 +152,10 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
                 }
             }
         }
-        _ => Err(format!("Error: unknown command \"{command}\"")),
+        _ => Err(format!(
+            "Error: unknown command \"{command}\"\n\n{}",
+            get_help_text()
+        )),
     }
 }
 
@@ -147,7 +166,7 @@ fn read_key_for_identifier(identifier: &str) -> Result<String, String> {
         .read_line(&mut key_base32)
         .map_err(|error| format!("Error entering key: {}", error))?;
     if key_base32.is_empty() {
-        return Err(format!("{}", ErrorMessage::EmptyKey.as_str()));
+        return Err(ErrorMessage::EmptyKey.into());
     }
     key_base32 = key_base32
         .trim()
