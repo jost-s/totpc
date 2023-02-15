@@ -130,7 +130,7 @@ pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String>
 fn write_lines_to_file(lines: Vec<String>, path: &Path) -> Result<(), String> {
     let file = File::create(path).map_err(|error| format!("Error writing entry - {error}"))?;
     let mut writer = BufWriter::new(file);
-    let all_lines = lines.join("\n");
+    let all_lines = lines.join("");
     writer
         .write_all(all_lines.as_bytes())
         .map_err(|error| format!("Error writing entry - {error}"))
