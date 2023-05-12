@@ -1,313 +1,323 @@
 use std::{
-    fs::{File, OpenOptions},
-    io::{BufRead, BufReader, BufWriter, Write},
+    ffi::OsStr,
+    fs::{create_dir, read_to_string, remove_file, write},
+    io::Write,
     path::Path,
+    process::{Command, Stdio},
 };
 
-pub const DELIMITER: &str = " ";
+const GPG_COMMAND: &str = "gpg2";
+const GPG_ID_FILE_NAME: &str = ".gpg-id";
+const GPG_FILE_EXTENSION: &str = "gpg";
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct Entry {
-    identifier: String,
-    key: String,
-}
-
-impl Entry {
-    fn new(identifier: &str, key: &str) -> Entry {
-        Self {
-            identifier: identifier.to_string(),
-            key: key.to_string(),
+pub fn init(totp_dir: &Path, gpg_id: &str) -> Result<(), String> {
+    let gpg_id_file = totp_dir.join(GPG_ID_FILE_NAME);
+    if gpg_id_file.is_file() {
+        let existing_gpg_id = read_to_string(gpg_id_file.clone())
+            .map_err(|err| format!("Error reading gpg id file - {err}"))?;
+        if !existing_gpg_id.is_empty() {
+            return Err(format!(
+                "Error initializing - existing gpg id found: {existing_gpg_id}\nDelete existing id first to re-initialize: rm {}", gpg_id_file.display()
+            ));
         }
+    } else if !totp_dir.exists() {
+        println!("totp dir {:?}", totp_dir);
+        create_dir(totp_dir).map_err(|err| format!("Error creating totp dir - {err}"))?;
     }
-
-    fn to_string(self) -> String {
-        format!("{}{}{}\n", self.identifier, DELIMITER, self.key)
-    }
+    write(gpg_id_file, gpg_id).map_err(|err| format!("Error writing gpg id file - {err}"))?;
+    Ok(())
 }
 
-impl TryFrom<String> for Entry {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.split_once(DELIMITER) {
-            None => return Err(format!("Error - missing identifier in entry: {value}")),
-            Some((identifier, key)) => Ok(Entry::new(identifier, key)),
-        }
-    }
+fn read_gpg_id(totp_dir: &Path) -> Result<String, String> {
+    read_to_string(totp_dir.join(GPG_ID_FILE_NAME))
+        .map(|gpg_id| gpg_id.trim().to_string())
+        .map_err(|err| format!("Error reading gpg id - {err}"))
 }
 
-pub fn ensure_file_exists(path: &Path) -> Result<(), String> {
-    if path.is_file() {
-        return Ok(());
-    }
-    File::create(path)
-        .map(|_| ())
-        .map_err(|error| format!("Error reading file - {error}"))
-}
-
-pub fn read_key_from_file(identifier: &str, path: &Path) -> Result<Option<String>, String> {
-    let maybe_key = find_entry_in_file(identifier, path)?.and_then(|entry| Some(entry.key));
-    Ok(maybe_key)
-}
-
-pub fn identifier_exists_in_file(identifier: &str, path: &Path) -> Result<bool, String> {
-    Ok(find_entry_in_file(identifier, path)?.is_some())
-}
-
-pub fn write_key_to_file(identifier: &str, key: &str, path: &Path) -> Result<(), String> {
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|error| format!("Error opening file with write access - {error}"))?;
-    let mut writer = BufWriter::new(file);
-    let entry = Entry::new(identifier, key);
-    writer
-        .write_all(entry.to_string().as_bytes())
-        .map_err(|error| format!("Error writing to file - {error}"))
-}
-
-pub fn list_identifiers(path: &Path) -> Result<Vec<String>, String> {
-    let file = File::open(path).map_err(|error| format!("Error reading file - {error}"))?;
-    let reader = BufReader::new(file);
-    let mut lines = Vec::new();
-    for maybe_line in reader.lines() {
-        match maybe_line {
-            Err(error) => return Err(format!("Error reading file - {error}")),
-            Ok(line) => {
-                let entry = Entry::try_from(line)?;
-                lines.push(entry.identifier);
+pub fn list_identifiers(totp_dir: &Path) -> Result<Vec<String>, String> {
+    let files_in_dir = totp_dir
+        .read_dir()
+        .map_err(|err| format!("Error reading dir {} - {err}", totp_dir.display()))?;
+    let mut identifiers: Vec<String> = files_in_dir
+        .filter_map(|entry_result| match entry_result {
+            Err(err) => {
+                eprintln!("Error reading dir - {err}");
+                None
             }
-        }
-    }
-    lines.sort();
-    Ok(lines)
-}
-
-pub fn update_key_in_file(identifier: &str, key: &str, path: &Path) -> Result<(), String> {
-    let updated_lines = {
-        let file = File::open(path).map_err(|error| format!("Error updating entry - {error}"))?;
-        let reader = BufReader::new(file);
-        let mut lines = Vec::new();
-        for maybe_line in reader.lines() {
-            match maybe_line {
-                Err(error) => return Err(format!("Error updating entry - {error}")),
-                Ok(line) => {
-                    let mut entry = Entry::try_from(line)?;
-                    if entry.identifier == identifier {
-                        entry.key = key.to_string();
-                    }
-                    lines.push(entry.to_string())
+            Ok(entry) => {
+                if entry
+                    .path()
+                    .extension()
+                    .and_then(OsStr::to_str)
+                    .map(|ext| ext == GPG_FILE_EXTENSION)
+                    .unwrap_or_else(|| false)
+                {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map(|file_name| file_name.replace(&format!(".{GPG_FILE_EXTENSION}"), ""))
+                } else {
+                    None
                 }
             }
+        })
+        .collect();
+    identifiers.sort();
+    Ok(identifiers)
+}
+
+pub fn write_encrypted_key_to_file(
+    gpg_home_dir: &Path,
+    totp_dir: &Path,
+    identifier: &str,
+    key: &str,
+) -> Result<(), String> {
+    let gpg_id = read_gpg_id(totp_dir)?;
+    let new_file_name = format!("{identifier}.{GPG_FILE_EXTENSION}");
+    let new_file_path = totp_dir.join(new_file_name);
+    let mut gpg_cmd = Command::new(GPG_COMMAND)
+        .arg("--homedir")
+        .arg(gpg_home_dir)
+        .arg("--encrypt")
+        .arg("--recipient")
+        .arg(gpg_id)
+        .arg("-o")
+        .arg(&new_file_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("Error running encryption command {GPG_COMMAND} - {err}"))?;
+    match gpg_cmd.stdin.take() {
+        None => return Err("Error inputting key to encrypt command".to_string()),
+        Some(mut stdin) => {
+            stdin
+                .write(key.as_bytes())
+                .map_err(|err| format!("Error inputting key to encryption command - {err}"))?;
         }
-        lines
     };
-    write_lines_to_file(updated_lines, path)
-}
-
-pub fn delete_key_from_file(identifier: &str, path: &Path) -> Result<(), String> {
-    let filtered_lines = {
-        let file = File::open(path).map_err(|error| format!("Error deleting entry - {error}"))?;
-        let reader = BufReader::new(file);
-        let mut lines = Vec::new();
-        for maybe_line in reader.lines() {
-            match maybe_line {
-                Err(error) => return Err(format!("Error deleting entry - {error}")),
-                Ok(line) => {
-                    let entry = Entry::try_from(line)?;
-                    if entry.identifier != identifier {
-                        lines.push(entry.to_string());
-                    }
-                }
-            }
-        }
-        lines
-    };
-    write_lines_to_file(filtered_lines, path)
-}
-
-fn write_lines_to_file(lines: Vec<String>, path: &Path) -> Result<(), String> {
-    let file = File::create(path).map_err(|error| format!("Error writing entry - {error}"))?;
-    let mut writer = BufWriter::new(file);
-    let all_lines = lines.join("");
-    writer
-        .write_all(all_lines.as_bytes())
-        .map_err(|error| format!("Error writing entry - {error}"))
-}
-
-fn find_entry_in_file(identifier: &str, path: &Path) -> Result<Option<Entry>, String> {
-    let file = File::open(path).map_err(|error| format!("Error reading file - {error}"))?;
-    let reader = BufReader::new(file);
-    let read_lines = reader.lines().filter_map(|line| match line {
-        Ok(l) => Some(l),
-        Err(error) => {
-            eprintln!("Error reading line: {error}");
-            None
-        }
-    });
-    for line in read_lines {
-        let entry = Entry::try_from(line)?;
-        if entry.identifier == identifier {
-            return Ok(Some(entry));
-        }
+    let exit_status = gpg_cmd.wait().map_err(|err| err.to_string())?;
+    if !exit_status.success() {
+        return Err("Error writing encryted key to file".to_string());
     }
-    Ok(None)
+    Ok(())
+}
+
+pub fn read_decrypted_key_from_file(
+    gpg_home_dir: &Path,
+    totp_dir: &Path,
+    identifier: &str,
+) -> Result<Option<String>, String> {
+    let gpg_id = read_gpg_id(totp_dir)?;
+    let file_name = format!("{identifier}.{GPG_FILE_EXTENSION}");
+    let file_path = totp_dir.join(file_name);
+    if !file_path.is_file() {
+        return Ok(None);
+    }
+    let output = Command::new(GPG_COMMAND)
+        .arg("--homedir")
+        .arg(gpg_home_dir)
+        .arg("--recipient")
+        .arg(gpg_id)
+        .arg("--decrypt")
+        .arg(&file_path)
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|err| format!("Error running encryption command {GPG_COMMAND} - {err}"))?;
+    if !output.stderr.is_empty() {
+        let err = String::from_utf8(output.stderr)
+            .map_err(|err| format!("Error parsing {GPG_COMMAND} error message - {err}"))?;
+        eprintln!("Reading decrypted key from file - {}", err);
+    }
+    let decrypted_key = String::from_utf8(output.stdout)
+        .map_err(|err| format!("Error reading decrypted key from file - {}", err))?;
+    Ok(Some(decrypted_key))
+}
+
+pub fn delete_key_file(totp_dir: &Path, identifier: &str) -> Result<(), String> {
+    let file_name = format!("{identifier}.{GPG_FILE_EXTENSION}");
+    let file_path = totp_dir.join(file_name);
+    remove_file(file_path).map_err(|err| format!("Error deleting key - {err}"))
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::file::{
-        delete_key_from_file, find_entry_in_file, identifier_exists_in_file, list_identifiers,
-        read_key_from_file, update_key_in_file, write_key_to_file, Entry, DELIMITER,
+    use crate::{
+        file::{
+            init, list_identifiers, read_decrypted_key_from_file, write_encrypted_key_to_file,
+            GPG_FILE_EXTENSION,
+        },
+        TOTP_DIR_NAME,
     };
-    use std::io::{BufRead, BufReader, Write};
-    use tempfile::NamedTempFile;
+    use std::{
+        fs::{create_dir, read_to_string, write, OpenOptions},
+        io::{ErrorKind, Write},
+        path::Path,
+        process::{Command, Stdio},
+    };
+    use tempfile::{NamedTempFile, TempDir};
 
-    #[test]
-    fn write() {
-        let file = NamedTempFile::new().unwrap();
-        let identifier = "test_site";
-        let key = "1234567890";
-        write_key_to_file(identifier, key, file.path()).unwrap();
+    use super::{delete_key_file, GPG_COMMAND, GPG_ID_FILE_NAME};
 
-        let mut lines = BufReader::new(file).lines().map(|line| line.unwrap());
-        let actual_entry = Entry::try_from(lines.next().unwrap()).unwrap();
-        let expected_entry = Entry::new(identifier, key);
-        assert_eq!(actual_entry, expected_entry);
+    const PASSPHRASE: &str = "abc";
+
+    fn generate_temp_gpg_key_pair(dir: &Path, gpg_id: &str) {
+        let config = format!(
+            "
+            Key-Type: RSA
+            Key-Length: 1024
+            Subkey-Type: RSA
+            Subkey-Length: 1024
+            Name-Real: {gpg_id}
+            Name-Email: joe@foo.bar
+            Expire-Date: 0
+            Passphrase: {PASSPHRASE}
+        "
+        );
+        let mut config_file = NamedTempFile::new_in(&dir).unwrap();
+        config_file.write_all(config.as_bytes()).unwrap();
+
+        let generate_key_pair_output = Command::new(GPG_COMMAND)
+            .arg("--homedir")
+            .arg(dir)
+            .arg("--batch")
+            .arg("--generate-key")
+            .arg(config_file.path())
+            .output()
+            .unwrap();
+        if !generate_key_pair_output.status.success() {
+            panic!("key generation failed");
+        }
     }
 
     #[test]
-    fn read() {
-        let mut file = NamedTempFile::new().unwrap();
-        let identifier = "test_site";
-        let expected_key = "1234567890";
+    fn init_fails_when_gpg_id_exists() {
+        let dir = TempDir::new().unwrap();
+        let totp_dir = dir.path().join(TOTP_DIR_NAME);
+        create_dir(&totp_dir).unwrap();
+        let gpg_id_file_path = totp_dir.join(GPG_ID_FILE_NAME);
+        let gpg_id = "test_id";
+        write(gpg_id_file_path.clone(), gpg_id).unwrap();
 
-        file.write_all(format!("{identifier}{DELIMITER}{expected_key}").as_bytes())
-            .unwrap();
+        let result = init(&totp_dir, gpg_id);
 
-        let actual_key = read_key_from_file(identifier, file.path())
-            .unwrap()
-            .unwrap();
-        assert_eq!(expected_key, actual_key);
+        assert!(matches!(result, Err(err) if err.contains(gpg_id) ));
     }
 
     #[test]
-    fn read_non_existing_identifier() {
-        let file = NamedTempFile::new().unwrap();
-        let identifier = "test_site";
+    fn init_writes_file_with_gpg_id() {
+        let dir = TempDir::new().unwrap();
+        let gpg_id = "test_id";
+        let path = dir.into_path().join(TOTP_DIR_NAME);
 
-        let actual_result = read_key_from_file(identifier, file.path()).unwrap();
+        init(&path, gpg_id).unwrap();
 
-        assert!(actual_result.is_none());
+        let gpg_id_file_path = path.join(GPG_ID_FILE_NAME);
+        let actual_content = read_to_string(gpg_id_file_path).unwrap();
+        assert_eq!(actual_content, gpg_id);
     }
 
     #[test]
-    fn write_and_read() {
-        let file = NamedTempFile::new().unwrap();
-        let identifier_1 = "test_id_1";
-        let identifier_2 = "test_id_2";
-        let expected_key_1 = "test_key_1";
-        let expected_key_2 = "test_key_2";
+    fn list_outputs_all_identifiers() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path();
+        let totp_dir = dir_path.join(TOTP_DIR_NAME);
+        create_dir(&totp_dir).unwrap();
+        // create gpg id file
+        let gpg_id = "Test Man";
+        init(&totp_dir, gpg_id).unwrap();
+        generate_temp_gpg_key_pair(&dir_path, gpg_id);
+        let identifier_1 = "test_id_100";
+        let identifier_2 = "test_id_1";
+        let key_1 = "test_key_1";
+        let key_2 = "test_key_2";
+        write_encrypted_key_to_file(&dir_path, &totp_dir, identifier_1, key_1).unwrap();
+        write_encrypted_key_to_file(&dir_path, &totp_dir, identifier_2, key_2).unwrap();
 
-        write_key_to_file(identifier_1, expected_key_1, file.path()).unwrap();
-        write_key_to_file(identifier_2, expected_key_2, file.path()).unwrap();
+        let identifier_list = list_identifiers(&totp_dir).unwrap();
 
-        let actual_key_1 = read_key_from_file(identifier_1, file.path())
-            .unwrap()
-            .unwrap();
-        assert_eq!(actual_key_1, expected_key_1);
-        let actual_key_2 = read_key_from_file(identifier_2, file.path())
-            .unwrap()
-            .unwrap();
-        assert_eq!(actual_key_2, expected_key_2);
-    }
-
-    #[test]
-    fn list() {
-        let file = NamedTempFile::new().unwrap();
-        let identifier_1 = "test_id_1";
-        let identifier_2 = "test_id_2";
-        let expected_key_1 = "test_key_1";
-        let expected_key_2 = "test_key_2";
-        write_key_to_file(identifier_2, expected_key_2, file.path()).unwrap();
-        write_key_to_file(identifier_1, expected_key_1, file.path()).unwrap();
-
-        let identifier_list = list_identifiers(file.path()).unwrap();
         // list should be ordered by identifier, ascending
-        assert_eq!(identifier_list[0], identifier_1);
-        assert_eq!(identifier_list[1], identifier_2);
+        assert_eq!(identifier_list, vec![identifier_2, identifier_1]);
     }
 
     #[test]
-    fn update_entry() {
-        let file = NamedTempFile::new().unwrap();
-        let identifier = "id";
-        let key = "key";
-        let updated_key = "key_updated";
-        write_key_to_file(identifier, key, file.path()).unwrap();
+    fn key_is_written_to_encrypted_file() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.into_path();
+        let totp_dir = dir_path.join(TOTP_DIR_NAME);
+        create_dir(&totp_dir).unwrap();
+        // create gpg id file
+        let gpg_id = "Test Man";
+        init(&totp_dir, gpg_id).unwrap();
+        generate_temp_gpg_key_pair(&dir_path, gpg_id);
 
-        update_key_in_file(identifier, updated_key, file.path()).unwrap();
+        // encrypt key and write to file
+        let identifier = "test_identifier";
+        let key = "1234567890";
+        write_encrypted_key_to_file(&dir_path, &totp_dir, identifier, key).unwrap();
 
-        let updated_entry = find_entry_in_file(identifier, file.path())
+        // decrypt from encrypted file
+        let encrypted_file_name = format!("{identifier}.{GPG_FILE_EXTENSION}");
+        let encrypted_file_path = totp_dir.join(encrypted_file_name);
+        let output = Command::new(GPG_COMMAND)
+            .arg("--homedir")
+            .arg(dir_path)
+            .arg("--decrypt")
+            .arg("--recipient")
+            .arg(gpg_id)
+            .arg("--pinentry-mode")
+            .arg("loopback")
+            .arg("--passphrase")
+            .arg(PASSPHRASE)
+            .arg(encrypted_file_path)
+            .stdout(Stdio::piped())
+            .output()
+            .unwrap();
+        let decrypted_key = String::from_utf8(output.stdout).unwrap();
+
+        assert_eq!(decrypted_key, key);
+    }
+
+    #[test]
+    fn key_file_is_deleted() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.into_path();
+        let totp_dir = dir_path.join(TOTP_DIR_NAME);
+        create_dir(&totp_dir).unwrap();
+        // create gpg id file
+        let gpg_id = "Test Man";
+        init(&totp_dir, gpg_id).unwrap();
+        generate_temp_gpg_key_pair(&dir_path, gpg_id);
+        let identifier = "test_identifier";
+        let key = "1234567890";
+        write_encrypted_key_to_file(&dir_path, &totp_dir, identifier, key).unwrap();
+
+        delete_key_file(&totp_dir, identifier).unwrap();
+
+        let file_name = format!("{identifier}.{GPG_FILE_EXTENSION}");
+        let file_path = dir_path.join(TOTP_DIR_NAME).join(file_name);
+        let result = OpenOptions::new().read(true).open(file_path);
+        assert!(matches!(result, Err(err) if err.kind() == ErrorKind::NotFound));
+    }
+
+    #[test]
+    #[ignore = "requires manual input"]
+    fn read_key_from_file_and_decrypt_manual() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.into_path();
+        let totp_dir = dir_path.join(TOTP_DIR_NAME);
+        create_dir(&totp_dir).unwrap();
+        // create gpg id file
+        let gpg_id = "Test Man";
+        init(&totp_dir, gpg_id).unwrap();
+        generate_temp_gpg_key_pair(&dir_path, gpg_id);
+        // encrypt key and write to file
+        let identifier = "test_identifier";
+        let key = "1234567890";
+        write_encrypted_key_to_file(&dir_path, &totp_dir, identifier, key).unwrap();
+
+        let decrypted_key = read_decrypted_key_from_file(&dir_path, &totp_dir, identifier)
             .unwrap()
             .unwrap();
-        assert_eq!(updated_entry, Entry::new(identifier, updated_key));
-    }
-
-    #[test]
-    fn delete_entry() {
-        let file = NamedTempFile::new().unwrap();
-        let identifier_1 = "id_1";
-        let identifier_2 = "id_2";
-        let key_1 = "key_1";
-        let key_2 = "key_2";
-        write_key_to_file(identifier_1, key_1, file.path()).unwrap();
-        write_key_to_file(identifier_2, key_2, file.path()).unwrap();
-
-        delete_key_from_file(identifier_1, file.path()).unwrap();
-
-        let deleted_identifier_exists =
-            identifier_exists_in_file(identifier_1, file.path()).unwrap();
-        assert_eq!(deleted_identifier_exists, false);
-        let identifier_2_exists = identifier_exists_in_file(identifier_2, file.path()).unwrap();
-        assert_eq!(identifier_2_exists, true);
-    }
-
-    #[test]
-    fn identifier_exists() {
-        let mut file = NamedTempFile::new().unwrap();
-        let identifier = "test_site";
-        let key = "1234567890";
-        let entry = Entry::new(identifier, key);
-        file.write_all(entry.to_string().as_bytes()).unwrap();
-
-        let identifier_exists = identifier_exists_in_file(identifier, file.path()).unwrap();
-
-        assert_eq!(identifier_exists, true);
-    }
-
-    #[test]
-    fn identifier_does_not_exist() {
-        let file = NamedTempFile::new().unwrap();
-        let identifier = "test_site";
-
-        let identifier_exists = identifier_exists_in_file(identifier, file.path()).unwrap();
-
-        assert!(identifier_exists == false);
-    }
-
-    #[test]
-    fn partial_identifier_does_not_exist() {
-        let mut file = NamedTempFile::new().unwrap();
-        let identifier = "test_site";
-        let partial_identifier = &identifier[0..2];
-        let key = "1234567890";
-        let entry = Entry::new(identifier, key);
-        file.write_all(entry.to_string().as_bytes()).unwrap();
-
-        let identifier_exists = identifier_exists_in_file(partial_identifier, file.path()).unwrap();
-
-        assert!(identifier_exists == false);
+        assert_eq!(decrypted_key, key);
     }
 }
