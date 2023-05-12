@@ -2,31 +2,34 @@ use std::io::stdin;
 use std::path::Path;
 
 use compute::compute;
-use file::{delete_key_from_file, list_identifiers, read_key_from_file};
-
-use crate::base32::decode;
-use crate::file::{
-    ensure_file_exists, identifier_exists_in_file, update_key_in_file, write_key_to_file,
+use file::{
+    delete_key_file, init, list_identifiers, read_decrypted_key_from_file,
+    write_encrypted_key_to_file,
 };
 
+use crate::base32::decode;
+
 mod base32;
-pub mod compute;
+mod compute;
 mod file;
 
+pub const TOTP_DIR_NAME: &str = ".totp";
+
+const BIN_COMMAND: &str = "totp";
+pub const COMMAND_HELP: &str = "--help";
+pub const COMMAND_INIT: &str = "init";
+pub const COMMAND_SHORT_INIT: &str = "i";
 pub const COMMAND_COMPUTE: &str = "compute";
 pub const COMMAND_SHORT_COMPUTE: &str = "c";
 pub const COMMAND_LOAD: &str = "read";
 pub const COMMAND_SHORT_LOAD: &str = "r";
 pub const COMMAND_SAVE: &str = "save";
 pub const COMMAND_SHORT_SAVE: &str = "s";
-pub const COMMAND_UPDATE: &str = "update";
-pub const COMMAND_SHORT_UPDATE: &str = "u";
 pub const COMMAND_DELETE: &str = "delete";
-pub const COMMAND_SHORT_DELETE: &str = "d";
 pub const COMMAND_LIST: &str = "list";
 pub const COMMAND_SHORT_LIST: &str = "l";
 
-const IDENTIFIER_LIST_HEADER: &str = "TOTP identifiers\n";
+const IDENTIFIER_LIST_HEADER: &str = "TOTP Store\n";
 const IDENTIFIER_LIST_ITEM_PREFIX: &str = "├─";
 const IDENTIFIER_LIST_LAST_ITEM_PREFIX: &str = "└─";
 
@@ -40,7 +43,7 @@ impl ErrorMessage<'_> {
         match self {
             Self::EmptyKey => "Error: key must not be empty".to_string(),
             Self::MissingIdentifier(command) => {
-                format!("Error: missing identifier - specify the identifier to use with {command}")
+                format!("Error: missing identifier - specify the identifier to {command}")
             }
         }
     }
@@ -54,18 +57,31 @@ impl Into<String> for ErrorMessage<'_> {
 
 pub fn get_help_text() -> String {
     format!(
-        "Usage: totp <command> [<identifier>]
+        "TOTP Store - time-based one time password store
 
-Commands:
-    {COMMAND_COMPUTE}, {COMMAND_SHORT_COMPUTE}   compute current password for given identifier
-    {COMMAND_DELETE}, {COMMAND_SHORT_DELETE}    delete entry of given identifier
-    {COMMAND_LOAD}, {COMMAND_SHORT_LOAD}      output associated key of given identifier
-    {COMMAND_SAVE}, {COMMAND_SHORT_SAVE}      save key for given identifier
-    {COMMAND_UPDATE}, {COMMAND_SHORT_UPDATE}    prompt to update key of given identifier"
+Usage:
+    {BIN_COMMAND} [{COMMAND_INIT}, {COMMAND_SHORT_INIT}] <gpg-id>
+        Initialize totp store with gpg-id for encrypting keys.
+
+    {BIN_COMMAND} [{COMMAND_LIST}, {COMMAND_SHORT_LIST}]
+        List all stored identifiers.
+
+    {BIN_COMMAND} [{COMMAND_COMPUTE}, {COMMAND_SHORT_COMPUTE}] <identifier>
+        Compute current one time password for given identifier.
+
+    {BIN_COMMAND} {COMMAND_DELETE} <identifier>
+        Delete identifier and key from store.
+
+    {BIN_COMMAND} [{COMMAND_LOAD}, {COMMAND_SHORT_LOAD}] <identifier>
+        Decrypt and output key of given identifier.
+
+    {BIN_COMMAND} [{COMMAND_SAVE}, {COMMAND_SHORT_SAVE}] <identifier>
+        Save key for given identifier.
+        Prompts to overwrite existing files."
     )
 }
 
-pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
+pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<String, String> {
     let command = {
         if args.len() < 2 {
             COMMAND_LIST
@@ -75,63 +91,50 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
     };
 
     match command {
+        COMMAND_INIT | COMMAND_SHORT_INIT => {
+            if args.len() < 3 {
+                return Err(
+                    "Error: gpg id required for initialization - totp init <gpg_id>".to_string(),
+                );
+            }
+            let gpg_id = args[2].as_str();
+            init(totp_dir, gpg_id)?;
+            Ok(format!("totp store initialized with gpg id {}", gpg_id))
+        }
+        COMMAND_LIST | COMMAND_SHORT_LIST => Ok(print_list(&list_identifiers(totp_dir)?)),
         COMMAND_SAVE | COMMAND_SHORT_SAVE => {
             if args.len() < 3 {
                 return Err(ErrorMessage::MissingIdentifier(COMMAND_SAVE).into());
             }
-            ensure_file_exists(file_path)?;
-
             let identifier = args[2].as_str();
-            let identifier_exists = identifier_exists_in_file(identifier, file_path)?;
-            if identifier_exists {
-                return Err(format!("Error: identifier {identifier} already exists"));
-            }
-
-            let key_base32 = read_key_for_identifier(identifier)?;
-            write_key_to_file(&identifier.to_string(), &key_base32, file_path)?;
-            Ok(format!("Key for identifier {identifier} saved."))
+            let key_base32 = read_key_input(identifier)?;
+            write_encrypted_key_to_file(gpg_home_dir, totp_dir, identifier, &key_base32)?;
+            Ok(format!("Key for {identifier} saved."))
         }
         COMMAND_LOAD | COMMAND_SHORT_LOAD => {
             if args.len() < 3 {
                 return Err(ErrorMessage::MissingIdentifier(COMMAND_LOAD).into());
             }
-            ensure_file_exists(file_path)?;
-
             let identifier = args[2].as_str();
-            match read_key_from_file(identifier, file_path)? {
-                None => Ok(format!("Identifier not found.")),
+            match read_decrypted_key_from_file(gpg_home_dir, totp_dir, identifier)? {
+                None => Ok(format!("Identifier {identifier} not found.")),
                 Some(key) => Ok(format!("Key for identifier {identifier}: {key}")),
             }
         }
-        COMMAND_UPDATE | COMMAND_SHORT_UPDATE => {
-            if args.len() < 3 {
-                return Err(ErrorMessage::MissingIdentifier(COMMAND_UPDATE).into());
-            }
-            let identifier = args[2].as_str();
-            let identifier_exists = identifier_exists_in_file(identifier, file_path)?;
-            if !identifier_exists {
-                return Err(format!("Error: identifier {identifier} does not exist"));
-            }
-
-            let key_base32 = read_key_for_identifier(identifier)?;
-            update_key_in_file(identifier, &key_base32, file_path)?;
-            Ok(format!("Entry for identifier {identifier} updated."))
-        }
-        COMMAND_DELETE | COMMAND_SHORT_DELETE => {
+        COMMAND_DELETE => {
             if args.len() < 3 {
                 return Err(ErrorMessage::MissingIdentifier(COMMAND_DELETE).into());
             }
             let identifier = args[2].as_str();
-            delete_key_from_file(identifier, file_path)?;
-            Ok(format!("Entry for identifier {identifier} deleted."))
+            delete_key_file(totp_dir, identifier)?;
+            Ok(format!("Key for {identifier} deleted."))
         }
-        COMMAND_LIST | COMMAND_SHORT_LIST => Ok(print_list(&list_identifiers(file_path)?)),
         COMMAND_COMPUTE | COMMAND_SHORT_COMPUTE => {
             if args.len() < 3 {
                 return Err(ErrorMessage::MissingIdentifier(COMMAND_COMPUTE).into());
             }
             let identifier = args[2].as_str();
-            let maybe_key_base32 = read_key_from_file(identifier, file_path)
+            let maybe_key_base32 = read_decrypted_key_from_file(gpg_home_dir, totp_dir, identifier)
                 .map_err(|error| format!("Error reading file - {error}"))?;
             match maybe_key_base32 {
                 None => {
@@ -152,6 +155,7 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
                 }
             }
         }
+        COMMAND_HELP => Ok(get_help_text()),
         _ => Err(format!(
             "Error: unknown command \"{command}\"\n\n{}",
             get_help_text()
@@ -159,7 +163,7 @@ pub fn run(args: Vec<String>, file_path: &Path) -> Result<String, String> {
     }
 }
 
-fn read_key_for_identifier(identifier: &str) -> Result<String, String> {
+fn read_key_input(identifier: &str) -> Result<String, String> {
     println!("Enter key for identifier {identifier}: ");
     let mut key_base32 = String::new();
     stdin()
@@ -173,25 +177,22 @@ fn read_key_for_identifier(identifier: &str) -> Result<String, String> {
         .replace(" ", "")
         .to_string()
         .to_uppercase();
-    // test key for valid Base32 encoding
+    // verify valid Base32 encoding of key
     base32::decode(&key_base32)?;
     Ok(key_base32)
 }
 
 fn print_list(identifier_list: &Vec<String>) -> String {
     let mut printed_list = String::from(IDENTIFIER_LIST_HEADER);
-    identifier_list[0..identifier_list.len() - 1]
-        .iter()
-        .for_each(|identifier| {
+    if let Some((last_identifier, identifiers)) = identifier_list.split_last() {
+        for identifier in identifiers {
             printed_list.push_str(format!("{IDENTIFIER_LIST_ITEM_PREFIX} {identifier}\n").as_str())
-        });
-    printed_list.push_str(
-        format!(
-            "{IDENTIFIER_LIST_LAST_ITEM_PREFIX} {}",
-            identifier_list[identifier_list.len() - 1]
-        )
-        .as_str(),
-    );
+        }
+        printed_list
+            .push_str(format!("{IDENTIFIER_LIST_LAST_ITEM_PREFIX} {}", last_identifier).as_str());
+    } else {
+        printed_list.push_str("--- empty ---")
+    }
     printed_list
 }
 
