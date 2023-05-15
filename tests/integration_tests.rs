@@ -1,4 +1,4 @@
-const BIN: &str = "totp";
+const BIN: &str = "totp_store";
 
 use assert_cmd::prelude::*;
 use std::process::Command;
