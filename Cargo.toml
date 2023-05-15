@@ -1,13 +1,18 @@
 [package]
+authors = ["Jost Schulte"]
+categories = ["command-line-utilities"]
+description = "Store to manage and compute TOTPs"
 edition = "2021"
-name = "totp"
-version = "0.2.0"
+keywords = ["totp", "time-based one time password", "cli", "gpg", "store"]
+license = "MIT"
+name = "totp_store"
+repository = "https://gitlab.com/jost-s/totp-store"
+version = "1.0.0"
 
 [dependencies]
 base32 = "0.4"
 hmac = "0.12"
 sha1 = "0.10"
-sha2 = "0.10"
 
 [dev-dependencies]
 assert_cmd = "2.0"

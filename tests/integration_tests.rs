@@ -2,7 +2,7 @@ const BIN: &str = "totp";
 
 use assert_cmd::prelude::*;
 use std::process::Command;
-use totp::{ErrorMessage, COMMAND_COMPUTE, COMMAND_DELETE, COMMAND_INIT, COMMAND_SAVE};
+use totp_store::{ErrorMessage, COMMAND_COMPUTE, COMMAND_DELETE, COMMAND_INIT, COMMAND_SAVE};
 
 #[test]
 fn init_without_id_fails() {
