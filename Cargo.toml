@@ -1,11 +1,11 @@
 [package]
 authors = ["Jost Schulte"]
 categories = ["command-line-utilities"]
-description = "Store to manage and compute TOTPs"
+description = "Desktop CLI tool to manage and compute TOTPs"
 edition = "2021"
 keywords = ["totp", "cli", "gpg", "store"]
 license = "MIT"
-name = "totp_store"
+name = "totpc"
 repository = "https://gitlab.com/jost-s/totp-store"
 version = "1.0.0"
 
