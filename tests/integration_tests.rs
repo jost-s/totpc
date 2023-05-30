@@ -1,8 +1,8 @@
-const BIN: &str = "totp_store";
+const BIN: &str = env!("CARGO_PKG_NAME");
 
 use assert_cmd::prelude::*;
 use std::process::Command;
-use totp_store::{ErrorMessage, COMMAND_COMPUTE, COMMAND_DELETE, COMMAND_INIT, COMMAND_SAVE};
+use totpc::{ErrorMessage, COMMAND_COMPUTE, COMMAND_DELETE, COMMAND_INIT, COMMAND_SAVE};
 
 #[test]
 fn init_without_id_fails() {

@@ -1,6 +1,6 @@
 use std::{env, path::Path, process};
 
-use totp_store::{run, TOTP_DIR_NAME};
+use totpc::{run, TOTP_DIR_NAME};
 
 fn main() {
     let args: Vec<String> = env::args().collect();

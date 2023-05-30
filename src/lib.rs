@@ -15,7 +15,7 @@ mod file;
 
 pub const TOTP_DIR_NAME: &str = ".totp";
 
-const BIN_COMMAND: &str = "totp";
+const BIN_COMMAND: &str = "totpc";
 pub const COMMAND_HELP: &str = "--help";
 pub const COMMAND_INIT: &str = "init";
 pub const COMMAND_SHORT_INIT: &str = "i";
@@ -23,13 +23,13 @@ pub const COMMAND_COMPUTE: &str = "compute";
 pub const COMMAND_SHORT_COMPUTE: &str = "c";
 pub const COMMAND_LOAD: &str = "read";
 pub const COMMAND_SHORT_LOAD: &str = "r";
-pub const COMMAND_SAVE: &str = "save";
+pub const COMMAND_SAVE: &str = "store";
 pub const COMMAND_SHORT_SAVE: &str = "s";
 pub const COMMAND_DELETE: &str = "delete";
 pub const COMMAND_LIST: &str = "list";
 pub const COMMAND_SHORT_LIST: &str = "l";
 
-const IDENTIFIER_LIST_HEADER: &str = "TOTP Store\n";
+const IDENTIFIER_LIST_HEADER: &str = "totp computer\n";
 const IDENTIFIER_LIST_ITEM_PREFIX: &str = "├─";
 const IDENTIFIER_LIST_LAST_ITEM_PREFIX: &str = "└─";
 
@@ -57,11 +57,11 @@ impl Into<String> for ErrorMessage<'_> {
 
 pub fn get_help_text() -> String {
     format!(
-        "TOTP Store - time-based one time password store
+        "TOTP Computer - time-based one time password computer
 
 Usage:
     {BIN_COMMAND} [{COMMAND_INIT}, {COMMAND_SHORT_INIT}] <gpg-id>
-        Initialize totp store with gpg-id for encrypting keys.
+        Initialize totp computer with gpg-id for encrypting keys.
 
     {BIN_COMMAND} [{COMMAND_LIST}, {COMMAND_SHORT_LIST}]
         List all stored identifiers.
@@ -99,7 +99,7 @@ pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<St
             }
             let gpg_id = args[2].as_str();
             init(totp_dir, gpg_id)?;
-            Ok(format!("totp store initialized with gpg id {}", gpg_id))
+            Ok(format!("totp computer initialized with gpg id {}", gpg_id))
         }
         COMMAND_LIST | COMMAND_SHORT_LIST => Ok(print_list(&list_identifiers(totp_dir)?)),
         COMMAND_SAVE | COMMAND_SHORT_SAVE => {
@@ -109,7 +109,7 @@ pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<St
             let identifier = args[2].as_str();
             let key_base32 = read_key_input(identifier)?;
             write_encrypted_key_to_file(gpg_home_dir, totp_dir, identifier, &key_base32)?;
-            Ok(format!("Key for {identifier} saved."))
+            Ok(format!("Key for {identifier} stored."))
         }
         COMMAND_LOAD | COMMAND_SHORT_LOAD => {
             if args.len() < 3 {
@@ -118,7 +118,7 @@ pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<St
             let identifier = args[2].as_str();
             match read_decrypted_key_from_file(gpg_home_dir, totp_dir, identifier)? {
                 None => Ok(format!("Identifier {identifier} not found.")),
-                Some(key) => Ok(format!("Key for identifier {identifier}: {key}")),
+                Some(key) => Ok(format!("Key for {identifier}: {key}")),
             }
         }
         COMMAND_DELETE => {
@@ -138,7 +138,7 @@ pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<St
                 .map_err(|error| format!("Error reading file - {error}"))?;
             match maybe_key_base32 {
                 None => {
-                    return Err(format!("Error: no entry found for identifier {identifier}"));
+                    return Err(format!("Error: no entry found for {identifier}"));
                 }
                 Some(key_base32) => {
                     let key = decode(&key_base32)?;
@@ -164,7 +164,7 @@ pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<St
 }
 
 fn read_key_input(identifier: &str) -> Result<String, String> {
-    println!("Enter key for identifier {identifier}: ");
+    println!("Enter key for {identifier}: ");
     let mut key_base32 = String::new();
     stdin()
         .read_line(&mut key_base32)
