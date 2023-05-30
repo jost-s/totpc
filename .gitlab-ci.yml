@@ -5,9 +5,6 @@ rust-latest:
   stage: build
   image: rust:latest
   script:
-    - which gpg
-    - gpg --help
-    - gpg2 --help
     - cargo build --verbose
     - cargo test --verbose
 
