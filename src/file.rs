@@ -6,7 +6,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-const GPG_COMMAND: &str = "gpg2";
+const GPG_COMMAND: &str = "gpg";
 const GPG_ID_FILE_NAME: &str = ".gpg-id";
 const GPG_FILE_EXTENSION: &str = "gpg";
 
