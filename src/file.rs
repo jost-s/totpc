@@ -10,6 +10,8 @@ const GPG_COMMAND: &str = "gpg";
 const GPG_ID_FILE_NAME: &str = ".gpg-id";
 const GPG_FILE_EXTENSION: &str = "gpg";
 
+/// Initialize a directory for usage with totpc. Creates a file with the GPG id
+/// in it.
 pub fn init(totp_dir: &Path, gpg_id: &str) -> Result<(), String> {
     let gpg_id_file = totp_dir.join(GPG_ID_FILE_NAME);
     if gpg_id_file.is_file() {
@@ -28,12 +30,14 @@ pub fn init(totp_dir: &Path, gpg_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Read GPG id from the given totpc directory.
 fn read_gpg_id(totp_dir: &Path) -> Result<String, String> {
     read_to_string(totp_dir.join(GPG_ID_FILE_NAME))
         .map(|gpg_id| gpg_id.trim().to_string())
         .map_err(|err| format!("Error reading gpg id - {err}"))
 }
 
+/// List all stored identifiers in the given directory.
 pub fn list_identifiers(totp_dir: &Path) -> Result<Vec<String>, String> {
     let files_in_dir = totp_dir
         .read_dir()
@@ -66,6 +70,7 @@ pub fn list_identifiers(totp_dir: &Path) -> Result<Vec<String>, String> {
     Ok(identifiers)
 }
 
+/// Encrypt and store key to file under name <identifier> in given directory.
 pub fn write_encrypted_key_to_file(
     gpg_home_dir: &Path,
     totp_dir: &Path,
@@ -102,6 +107,7 @@ pub fn write_encrypted_key_to_file(
     Ok(())
 }
 
+/// Decrypt encrypted key from file with name <identifier> in given directory.
 pub fn read_decrypted_key_from_file(
     gpg_home_dir: &Path,
     totp_dir: &Path,
@@ -133,6 +139,7 @@ pub fn read_decrypted_key_from_file(
     Ok(Some(decrypted_key))
 }
 
+/// Delete file with name <identifier> in given directory.
 pub fn delete_key_file(totp_dir: &Path, identifier: &str) -> Result<(), String> {
     let file_name = format!("{identifier}.{GPG_FILE_EXTENSION}");
     let file_path = totp_dir.join(file_name);
