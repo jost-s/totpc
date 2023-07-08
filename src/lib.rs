@@ -13,26 +13,40 @@ mod base32;
 mod compute;
 mod file;
 
-pub const TOTP_DIR_NAME: &str = ".totp";
+/// Default totpc directory.
+pub const TOTP_DIR_NAME: &str = ".totpc";
 
 const BIN_COMMAND: &str = "totpc";
+/// Help sub command.
 pub const COMMAND_HELP: &str = "--help";
+/// Init command.
 pub const COMMAND_INIT: &str = "init";
+/// Init command shortcut.
 pub const COMMAND_SHORT_INIT: &str = "i";
+/// Compute command.
 pub const COMMAND_COMPUTE: &str = "compute";
+/// Compute command shortcut.
 pub const COMMAND_SHORT_COMPUTE: &str = "c";
+/// Read command.
 pub const COMMAND_LOAD: &str = "read";
+/// Read command shortcut.
 pub const COMMAND_SHORT_LOAD: &str = "r";
+/// Store command.
 pub const COMMAND_SAVE: &str = "store";
+/// Store command shortcut.
 pub const COMMAND_SHORT_SAVE: &str = "s";
+/// Delete command.
 pub const COMMAND_DELETE: &str = "delete";
+/// List command.
 pub const COMMAND_LIST: &str = "list";
+/// List command shortcut.
 pub const COMMAND_SHORT_LIST: &str = "l";
 
 const IDENTIFIER_LIST_HEADER: &str = "totp computer\n";
 const IDENTIFIER_LIST_ITEM_PREFIX: &str = "├─";
 const IDENTIFIER_LIST_LAST_ITEM_PREFIX: &str = "└─";
 
+/// Message to display when command fails.
 pub enum ErrorMessage<'a> {
     EmptyKey,
     MissingIdentifier(&'a str),
@@ -55,6 +69,7 @@ impl Into<String> for ErrorMessage<'_> {
     }
 }
 
+/// Returns the general help text.
 pub fn get_help_text() -> String {
     format!(
         "TOTP Computer - time-based one time password computer
@@ -81,6 +96,11 @@ Usage:
     )
 }
 
+/// Identifies entered command and calls corresponding function.
+/// 
+/// # Errors
+/// 
+/// Returns error when command is unknown.
 pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<String, String> {
     let command = {
         if args.len() < 2 {

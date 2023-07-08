@@ -1,6 +1,8 @@
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 
+/// Compute a time-based one time password according to RFC 2468 from given
+/// plain text key and time step.
 pub fn compute(key: &[u8], time_step: u64) -> Result<String, String> {
     let time_step_bytes = time_step.to_be_bytes();
 
