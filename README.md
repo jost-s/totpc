@@ -1,4 +1,4 @@
-# totp computer
+# totp computer ![Test](https://github.com/jost-s/totpc/actions/workflows/test.yml/badge.svg?branch=main)
 
 Desktop CLI tool to manage TOTP keys and compute values.
 
