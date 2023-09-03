@@ -1,5 +1,5 @@
-use std::io::stdin;
 use std::path::Path;
+use std::{fmt::Display, io::stdin};
 
 use compute::compute;
 use file::{
@@ -52,20 +52,20 @@ pub enum ErrorMessage<'a> {
     MissingIdentifier(&'a str),
 }
 
-impl ErrorMessage<'_> {
-    pub fn to_string(&self) -> String {
+impl Display for ErrorMessage<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::EmptyKey => "Error: key must not be empty".to_string(),
-            Self::MissingIdentifier(command) => {
-                format!("Error: missing identifier - specify the identifier to {command}")
-            }
+            Self::EmptyKey => f.write_str("Error: key must not be empty"),
+            Self::MissingIdentifier(command) => f.write_str(&format!(
+                "Error: missing identifier - specify the identifier to {command}"
+            )),
         }
     }
 }
 
-impl Into<String> for ErrorMessage<'_> {
-    fn into(self) -> String {
-        String::from(self.to_string())
+impl From<ErrorMessage<'_>> for String {
+    fn from(value: ErrorMessage) -> Self {
+        value.to_string()
     }
 }
 
@@ -97,9 +97,9 @@ Usage:
 }
 
 /// Identifies entered command and calls corresponding function.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns error when command is unknown.
 pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<String, String> {
     let command = {
@@ -157,9 +157,7 @@ pub fn run(gpg_home_dir: &Path, totp_dir: &Path, args: Vec<String>) -> Result<St
             let maybe_key_base32 = read_decrypted_key_from_file(gpg_home_dir, totp_dir, identifier)
                 .map_err(|error| format!("Error reading file - {error}"))?;
             match maybe_key_base32 {
-                None => {
-                    return Err(format!("Error: no entry found for {identifier}"));
-                }
+                None => Err(format!("Error: no entry found for {identifier}")),
                 Some(key_base32) => {
                     let key = decode(&key_base32)?;
                     let time = std::time::SystemTime::UNIX_EPOCH
@@ -194,7 +192,7 @@ fn read_key_input(identifier: &str) -> Result<String, String> {
     }
     key_base32 = key_base32
         .trim()
-        .replace(" ", "")
+        .replace(' ', "")
         .to_string()
         .to_uppercase();
     // verify valid Base32 encoding of key
@@ -202,7 +200,7 @@ fn read_key_input(identifier: &str) -> Result<String, String> {
     Ok(key_base32)
 }
 
-fn print_list(identifier_list: &Vec<String>) -> String {
+fn print_list(identifier_list: &[String]) -> String {
     let mut printed_list = String::from(IDENTIFIER_LIST_HEADER);
     if let Some((last_identifier, identifiers)) = identifier_list.split_last() {
         for identifier in identifiers {
