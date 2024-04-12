@@ -127,12 +127,18 @@ pub fn read_decrypted_key_from_file(
         .arg("--decrypt")
         .arg(&file_path)
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .map_err(|err| format!("Error running encryption command {GPG_COMMAND} - {err}"))?;
+    // gpg encryption info is written to stderr
+    // only display if it contains error text
+    // probably never, in error case above command would fail
     if !output.stderr.is_empty() {
-        let err = String::from_utf8(output.stderr)
+        let err_output = String::from_utf8(output.stderr)
             .map_err(|err| format!("Error parsing {GPG_COMMAND} error message - {err}"))?;
-        eprintln!("Reading decrypted key from file - {}", err);
+        if err_output.contains("error") {
+            eprintln!("Error reading decrypted key from file - {}", err_output);
+        }
     }
     let decrypted_key = String::from_utf8(output.stdout)
         .map_err(|err| format!("Error reading decrypted key from file - {}", err))?;
