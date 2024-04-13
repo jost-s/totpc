@@ -127,12 +127,14 @@ pub fn read_decrypted_key_from_file(
         .arg("--decrypt")
         .arg(&file_path)
         .stdout(Stdio::piped())
+        .stdin(Stdio::inherit())
+        .stderr(Stdio::piped())
         .output()
         .map_err(|err| format!("Error running encryption command {GPG_COMMAND} - {err}"))?;
-    if !output.stderr.is_empty() {
-        let err = String::from_utf8(output.stderr)
+    if !output.status.success() {
+        let err_output = String::from_utf8(output.stderr)
             .map_err(|err| format!("Error parsing {GPG_COMMAND} error message - {err}"))?;
-        eprintln!("Reading decrypted key from file - {}", err);
+        return Err(err_output);
     }
     let decrypted_key = String::from_utf8(output.stdout)
         .map_err(|err| format!("Error reading decrypted key from file - {}", err))?;
@@ -260,6 +262,10 @@ mod tests {
         // encrypt key and write to file
         let identifier = "test_identifier";
         let key = "1234567890";
+        println!(
+            "dir path {:?} totp_dir {:?} identifier {identifier} key {key}",
+            dir_path, totp_dir
+        );
         write_encrypted_key_to_file(&dir_path, &totp_dir, identifier, key).unwrap();
 
         // decrypt from encrypted file
