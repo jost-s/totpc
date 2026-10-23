@@ -1,12 +1,12 @@
 [package]
 authors = ["Jost Schulte"]
-categories = ["command-line-utilities"]
-description = "Desktop CLI tool to manage and compute TOTPs"
+categories = ["command-line-utilities", "authentication"]
+description = "Command-line TOTP authenticator that stores 2FA secrets encrypted with GPG, like pass"
 edition = "2021"
-keywords = ["totp", "cli", "gpg", "store"]
+keywords = ["totp", "2fa", "otp", "cli", "gpg"]
 license = "MIT"
 name = "totpc"
-repository = "https://gitlab.com/jost-s/totp-store"
+repository = "https://github.com/jost-s/totpc"
 version = "1.1.0"
 
 [dependencies]
