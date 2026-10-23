@@ -1,3 +1,23 @@
+//! Library behind the `totpc` command-line tool.
+//!
+//! Secrets are stored encrypted with GPG in the same layout as
+//! [pass](https://www.passwordstore.org/): a `.gpg-id` file names the
+//! encryption key and every secret lives in its own `<identifier>.gpg` file.
+//!
+//! [`run`] executes a command from the command-line arguments:
+//!
+//! ```no_run
+//! use std::path::Path;
+//!
+//! let home = Path::new("/home/me");
+//! let args = vec!["totpc".to_string(), "compute".to_string(), "github".to_string()];
+//! let output = totpc::run(&home.join(".gnupg"), &home.join(totpc::TOTP_DIR_NAME), args)?;
+//! println!("{output}");
+//! # Ok::<(), String>(())
+//! ```
+//!
+//! See the [README](https://github.com/jost-s/totpc#readme) for installation and usage.
+
 use std::path::Path;
 use std::{fmt::Display, io::stdin};
 
