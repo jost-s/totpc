@@ -45,7 +45,7 @@ jobs:
     needs: release-please
     # Only when this run actually cut a release
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -56,21 +56,27 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   binary:
-    name: Attach the binaries
+    name: Attach the binaries (${{ matrix.target }})
     needs: [release-please, publish]
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
-      # One archive covering Apple Silicon and Intel.
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: totpc
-          target: universal-apple-darwin
+          target: ${{ matrix.target }}
           archive: $bin-$target
           checksum: sha256
           locked: true
